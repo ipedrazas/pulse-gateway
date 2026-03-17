@@ -64,19 +64,19 @@ A background task in the Rust backend subscribes to Docker socket events via `bo
 
 ### Acceptance criteria
 
-- [ ] Backend listens to Docker socket events in a long-running background task
-- [ ] Any container start triggers automatic Caddy route creation within 2 seconds
-- [ ] Containers with label `pulse.proxy=false` are excluded from auto-routing
-- [ ] The Caddy sidecar container is always excluded from auto-routing
-- [ ] Container stop/die triggers automatic Caddy route removal
-- [ ] Containers are auto-attached to `pulse-gateway` network if not already connected
-- [ ] Port detection follows priority: `pulse.port` label > static route rule for image > `EXPOSE` directives
-- [ ] Multi-port containers get one route per port: `{name}-{port}.{domain}`
-- [ ] Image-based static route rules override default multi-port naming
-- [ ] Name collisions resolved: first-come-first-served, duplicates get `-2`, `-3` suffix with a logged warning
-- [ ] On app startup, reconcile running containers against Caddy routes (add missing, remove stale)
-- [ ] Auto-restart Caddy container if it crashes
-- [ ] Frontend updates in real time via Tauri events as gateways are added/removed
+- [x] Backend listens to Docker socket events in a long-running background task
+- [x] Any container start triggers automatic Caddy route creation within 2 seconds
+- [x] Containers with label `pulse.proxy=false` are excluded from auto-routing
+- [x] The Caddy sidecar container is always excluded from auto-routing
+- [x] Container stop/die triggers automatic Caddy route removal
+- [x] Containers are auto-attached to `pulse-gateway` network if not already connected
+- [x] Port detection follows priority: `pulse.port` label > static route rule for image > `EXPOSE` directives
+- [x] Multi-port containers get one route per port: `{name}-{port}.{domain}`
+- [x] Image-based static route rules override default multi-port naming
+- [x] Name collisions resolved: first-come-first-served, duplicates get `-2`, `-3` suffix with a logged warning
+- [x] On app startup, reconcile running containers against Caddy routes (add missing, remove stale)
+- [x] Auto-restart Caddy container if it crashes
+- [x] Frontend updates in real time via Tauri events as gateways are added/removed
 
 ---
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useGatewayStore } from "../stores/gateway";
 import { useSettingsStore } from "../stores/settings";
 
@@ -11,10 +11,17 @@ const newTargetHost = ref("");
 const newPort = ref<number | undefined>();
 const error = ref("");
 
+const autoGateways = computed(() =>
+  gateway.allGateways.filter((g) => g.source === "auto")
+);
+
+const staticGateways = computed(() =>
+  gateway.allGateways.filter((g) => g.source === "static")
+);
+
 onMounted(async () => {
   await settings.fetchSettings();
-  await gateway.fetchStatus();
-  await gateway.fetchRoutes();
+  await gateway.init();
 });
 
 async function handleStartCaddy() {
@@ -43,6 +50,10 @@ async function handleRemoveRoute(subdomain: string) {
   } catch (e) {
     error.value = String(e);
   }
+}
+
+function fqdn(subdomain: string): string {
+  return settings.domain ? `${subdomain}.${settings.domain}` : subdomain;
 }
 </script>
 
@@ -76,15 +87,38 @@ async function handleRemoveRoute(subdomain: string) {
       </div>
     </section>
 
+    <!-- Auto-discovered gateways -->
     <section class="routes-section">
-      <h2>Static Routes</h2>
-      <div v-if="settings.domain" class="domain-info">
-        Domain: <strong>*.{{ settings.domain }}</strong>
-      </div>
-      <div v-else class="domain-warning">
+      <h2>Auto-Discovered Gateways</h2>
+      <div v-if="!settings.domain" class="domain-warning">
         No domain configured. <router-link to="/settings">Set one in Settings</router-link>.
       </div>
+      <table v-if="autoGateways.length > 0" class="routes-table">
+        <thead>
+          <tr>
+            <th>Subdomain</th>
+            <th>Container</th>
+            <th>Port</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="gw in autoGateways" :key="gw.subdomain">
+            <td>{{ fqdn(gw.subdomain) }}</td>
+            <td>{{ gw.container_name || gw.target_host }}</td>
+            <td>{{ gw.port }}</td>
+            <td><span class="badge badge-auto">Auto</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty-state">
+        No containers detected. Start a Docker container to see it here.
+      </p>
+    </section>
 
+    <!-- Static routes -->
+    <section class="routes-section">
+      <h2>Static Routes</h2>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
         <input v-model="newSubdomain" placeholder="subdomain" />
         <input v-model="newTargetHost" placeholder="target host (e.g. localhost)" />
@@ -93,7 +127,7 @@ async function handleRemoveRoute(subdomain: string) {
       </form>
       <div v-if="error" class="form-error">{{ error }}</div>
 
-      <table v-if="gateway.routes.length > 0" class="routes-table">
+      <table v-if="staticGateways.length > 0" class="routes-table">
         <thead>
           <tr>
             <th>Subdomain</th>
@@ -103,10 +137,8 @@ async function handleRemoveRoute(subdomain: string) {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="route in gateway.routes" :key="route.subdomain">
-            <td>
-              {{ route.subdomain }}<span v-if="settings.domain">.{{ settings.domain }}</span>
-            </td>
+          <tr v-for="route in staticGateways" :key="route.subdomain">
+            <td>{{ fqdn(route.subdomain) }}</td>
             <td>{{ route.target_host }}</td>
             <td>{{ route.port }}</td>
             <td>
@@ -117,7 +149,7 @@ async function handleRemoveRoute(subdomain: string) {
           </tr>
         </tbody>
       </table>
-      <p v-else class="empty-state">No routes configured yet.</p>
+      <p v-else class="empty-state">No static routes configured.</p>
     </section>
   </div>
 </template>
@@ -163,15 +195,15 @@ async function handleRemoveRoute(subdomain: string) {
   color: #721c24;
 }
 
+.badge-auto {
+  background: #cce5ff;
+  color: #004085;
+}
+
 .status-error {
   color: #721c24;
   margin: 0.5rem 0;
   font-size: 0.9rem;
-}
-
-.domain-info {
-  margin-bottom: 1rem;
-  color: #555;
 }
 
 .domain-warning {
@@ -243,6 +275,11 @@ async function handleRemoveRoute(subdomain: string) {
   .badge-err {
     background: #3a1e1e;
     color: #e88;
+  }
+
+  .badge-auto {
+    background: #1e2a3a;
+    color: #7ab8e8;
   }
 
   .domain-warning {

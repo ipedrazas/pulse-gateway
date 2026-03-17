@@ -1,11 +1,15 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export interface Gateway {
   subdomain: string;
   target_host: string;
   port: number;
+  source: "static" | "auto";
+  container_id?: string;
+  container_name?: string;
 }
 
 export interface CaddyStatus {
@@ -15,13 +19,29 @@ export interface CaddyStatus {
 }
 
 export const useGatewayStore = defineStore("gateway", () => {
-  const routes = ref<Gateway[]>([]);
+  const allGateways = ref<Gateway[]>([]);
+  const staticRoutes = ref<Gateway[]>([]);
   const caddyStatus = ref<CaddyStatus>({
     running: false,
     api_reachable: false,
     error: null,
   });
   const loading = ref(false);
+  let eventUnlisten: (() => void) | null = null;
+
+  async function init() {
+    await setupEventListener();
+    await fetchStatus();
+    await fetchAllGateways();
+    await fetchStaticRoutes();
+  }
+
+  async function setupEventListener() {
+    if (eventUnlisten) return;
+    eventUnlisten = await listen<Gateway[]>("gateways-changed", (event) => {
+      allGateways.value = event.payload;
+    });
+  }
 
   async function fetchStatus() {
     try {
@@ -39,7 +59,8 @@ export const useGatewayStore = defineStore("gateway", () => {
     loading.value = true;
     try {
       caddyStatus.value = await invoke("start_caddy");
-      await fetchRoutes();
+      await fetchAllGateways();
+      await fetchStaticRoutes();
     } catch (e) {
       caddyStatus.value = {
         running: false,
@@ -51,41 +72,44 @@ export const useGatewayStore = defineStore("gateway", () => {
     }
   }
 
-  async function fetchRoutes() {
+  async function fetchAllGateways() {
     try {
-      routes.value = await invoke("get_routes");
+      allGateways.value = await invoke("get_all_gateways");
     } catch (e) {
-      console.error("Failed to fetch routes:", e);
+      console.error("Failed to fetch gateways:", e);
+    }
+  }
+
+  async function fetchStaticRoutes() {
+    try {
+      staticRoutes.value = await invoke("get_routes");
+    } catch (e) {
+      console.error("Failed to fetch static routes:", e);
     }
   }
 
   async function addRoute(subdomain: string, targetHost: string, port: number) {
-    try {
-      routes.value = await invoke("add_route", {
-        subdomain,
-        targetHost,
-        port,
-      });
-    } catch (e) {
-      throw e;
-    }
+    staticRoutes.value = await invoke("add_route", {
+      subdomain,
+      targetHost,
+      port,
+    });
   }
 
   async function removeRoute(subdomain: string) {
-    try {
-      routes.value = await invoke("remove_route", { subdomain });
-    } catch (e) {
-      throw e;
-    }
+    staticRoutes.value = await invoke("remove_route", { subdomain });
   }
 
   return {
-    routes,
+    allGateways,
+    staticRoutes,
     caddyStatus,
     loading,
+    init,
     fetchStatus,
     startCaddy,
-    fetchRoutes,
+    fetchAllGateways,
+    fetchStaticRoutes,
     addRoute,
     removeRoute,
   };

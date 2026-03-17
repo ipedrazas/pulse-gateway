@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
-use bollard::container::{Config, CreateContainerOptions, ListContainersOptions, StartContainerOptions};
+use bollard::container::{
+    Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
+    StartContainerOptions,
+};
 use bollard::image::CreateImageOptions;
-use bollard::models::{HostConfig, Mount, MountTypeEnum, PortBinding, RestartPolicy, RestartPolicyNameEnum};
-use bollard::network::CreateNetworkOptions;
+use bollard::models::{
+    EndpointSettings, HostConfig, Mount, MountTypeEnum, PortBinding, RestartPolicy,
+    RestartPolicyNameEnum,
+};
+use bollard::network::{ConnectNetworkOptions, CreateNetworkOptions};
 use bollard::Docker;
 use futures::StreamExt;
 
@@ -39,7 +45,6 @@ pub async fn ensure_network(docker: &Docker) -> Result<(), String> {
 }
 
 pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
-    // Check if container already exists
     let filters: HashMap<String, Vec<String>> = HashMap::from([(
         "name".to_string(),
         vec![CADDY_CONTAINER_NAME.to_string()],
@@ -54,7 +59,6 @@ pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to list containers: {e}"))?;
 
     if let Some(container) = containers.first() {
-        // Container exists — start it if not running
         let state = container.state.as_deref().unwrap_or("");
         if state != "running" {
             docker
@@ -171,4 +175,90 @@ pub async fn is_caddy_running(docker: &Docker) -> bool {
         Ok(containers) => !containers.is_empty(),
         Err(_) => false,
     }
+}
+
+/// Information extracted from a running container for routing purposes.
+pub struct ContainerInfo {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub labels: HashMap<String, String>,
+    pub ports: Vec<u16>,
+    pub on_network: bool,
+}
+
+/// Inspect a container and extract routing-relevant information.
+pub async fn inspect_for_routing(
+    docker: &Docker,
+    container_id: &str,
+) -> Result<ContainerInfo, String> {
+    let info = docker
+        .inspect_container(container_id, None::<InspectContainerOptions>)
+        .await
+        .map_err(|e| format!("Failed to inspect container: {e}"))?;
+
+    let name = info
+        .name
+        .unwrap_or_default()
+        .trim_start_matches('/')
+        .to_string();
+
+    let config = info.config.unwrap_or_default();
+    let labels = config.labels.unwrap_or_default();
+    let image = config.image.unwrap_or_default();
+
+    // Extract exposed ports from container config
+    let exposed_ports = config.exposed_ports.unwrap_or_default();
+    let ports: Vec<u16> = exposed_ports
+        .keys()
+        .filter_map(|k| k.split('/').next()?.parse().ok())
+        .collect();
+
+    // Check if already on our network
+    let on_network = info
+        .network_settings
+        .as_ref()
+        .and_then(|ns| ns.networks.as_ref())
+        .map(|n| n.contains_key(NETWORK_NAME))
+        .unwrap_or(false);
+
+    Ok(ContainerInfo {
+        id: container_id.to_string(),
+        name,
+        image,
+        labels,
+        ports,
+        on_network,
+    })
+}
+
+/// Attach a container to the pulse-gateway network.
+pub async fn attach_to_network(docker: &Docker, container_id: &str) -> Result<(), String> {
+    docker
+        .connect_network(
+            NETWORK_NAME,
+            ConnectNetworkOptions {
+                container: container_id.to_string(),
+                endpoint_config: EndpointSettings::default(),
+            },
+        )
+        .await
+        .map_err(|e| format!("Failed to attach container to network: {e}"))?;
+    Ok(())
+}
+
+/// List all currently running containers (excluding stopped).
+pub async fn list_running_containers(docker: &Docker) -> Result<Vec<String>, String> {
+    let containers = docker
+        .list_containers(Some(ListContainersOptions::<String> {
+            all: false,
+            ..Default::default()
+        }))
+        .await
+        .map_err(|e| format!("Failed to list containers: {e}"))?;
+
+    Ok(containers
+        .into_iter()
+        .filter_map(|c| c.id)
+        .collect())
 }
