@@ -1,6 +1,7 @@
 mod caddy;
 mod commands;
 mod config;
+mod credentials;
 mod docker;
 mod models;
 mod watcher;
@@ -43,6 +44,9 @@ pub fn run() {
             commands::remove_route,
             commands::get_settings,
             commands::save_settings,
+            commands::get_dns_config,
+            commands::save_dns_config,
+            commands::get_cert_info,
             commands::get_route_rules,
             commands::add_route_rule,
             commands::remove_route_rule,

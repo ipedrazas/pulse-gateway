@@ -2,8 +2,9 @@ use tauri::{Emitter, State};
 
 use crate::caddy;
 use crate::config;
+use crate::credentials;
 use crate::docker;
-use crate::models::{AppConfig, CaddyStatus, Gateway, StaticRouteRule};
+use crate::models::{AppConfig, CaddyStatus, CertInfo, DnsConfig, DnsProvider, Gateway, StaticRouteRule};
 use crate::watcher;
 use crate::AppState;
 
@@ -41,7 +42,6 @@ pub async fn start_caddy(
         });
     }
 
-    // Wait for Caddy API
     let mut api_ready = false;
     for _ in 0..10 {
         if caddy::check_health(&state.http_client).await {
@@ -51,11 +51,16 @@ pub async fn start_caddy(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    // Push all routes (static + auto)
     if api_ready {
         let auto = state.auto_gateways.lock().await;
         let combined = watcher::combine_routes(&config.static_routes, &auto);
-        let _ = caddy::push_routes(&state.http_client, &combined, &config.domain).await;
+        let _ = caddy::push_routes_with_tls(
+            &state.http_client,
+            &combined,
+            &config.domain,
+            &config.dns_provider,
+        )
+        .await;
     }
 
     Ok(CaddyStatus {
@@ -114,14 +119,17 @@ pub async fn add_route(
 
     config::save_config(&app_handle, &app_config)?;
 
-    // Push combined routes to Caddy
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes_with_tls(
+        &state.http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
-    // Emit update
     let _ = app_handle.emit("gateways-changed", &combined);
-
     Ok(app_config.static_routes)
 }
 
@@ -137,13 +145,17 @@ pub async fn remove_route(
         .retain(|r| r.subdomain != subdomain);
     config::save_config(&app_handle, &app_config)?;
 
-    // Push combined routes
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes_with_tls(
+        &state.http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
-
     Ok(app_config.static_routes)
 }
 
@@ -163,6 +175,80 @@ pub async fn save_settings(
     app_config.caddy_image = caddy_image;
     config::save_config(&app_handle, &app_config)?;
     Ok(app_config)
+}
+
+#[tauri::command]
+pub async fn get_dns_config(app_handle: tauri::AppHandle) -> Result<DnsConfig, String> {
+    let config = config::load_config(&app_handle);
+    Ok(DnsConfig {
+        provider: config.dns_provider.clone(),
+        has_credentials: credentials::has_credentials(&config.dns_provider),
+    })
+}
+
+#[tauri::command]
+pub async fn save_dns_config(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    provider: DnsProvider,
+    api_token: Option<String>,
+    api_key: Option<String>,
+    api_secret: Option<String>,
+) -> Result<DnsConfig, String> {
+    let mut app_config = config::load_config(&app_handle);
+
+    // If provider changed, clear old credentials
+    if app_config.dns_provider != provider {
+        credentials::delete_credentials(&app_config.dns_provider);
+    }
+
+    // Store new credentials
+    match &provider {
+        DnsProvider::Cloudflare => {
+            let token = api_token.ok_or("Cloudflare API token is required")?;
+            if !token.is_empty() {
+                credentials::store_cloudflare_token(&token)?;
+            }
+        }
+        DnsProvider::Porkbun => {
+            let key = api_key.ok_or("Porkbun API key is required")?;
+            let secret = api_secret.ok_or("Porkbun API secret is required")?;
+            if !key.is_empty() && !secret.is_empty() {
+                credentials::store_porkbun_keys(&key, &secret)?;
+            }
+        }
+        DnsProvider::None => {
+            credentials::delete_credentials(&app_config.dns_provider);
+        }
+    }
+
+    app_config.dns_provider = provider.clone();
+    config::save_config(&app_handle, &app_config)?;
+
+    // Re-push routes with updated TLS config
+    let auto = state.auto_gateways.lock().await;
+    let combined = watcher::combine_routes(&app_config.static_routes, &auto);
+    let _ = caddy::push_routes_with_tls(
+        &state.http_client,
+        &combined,
+        &app_config.domain,
+        &provider,
+    )
+    .await;
+
+    Ok(DnsConfig {
+        provider,
+        has_credentials: credentials::has_credentials(&app_config.dns_provider),
+    })
+}
+
+#[tauri::command]
+pub async fn get_cert_info(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<CertInfo, String> {
+    let config = config::load_config(&app_handle);
+    Ok(caddy::get_cert_info(&state.http_client, &config.domain, &config.dns_provider).await)
 }
 
 #[tauri::command]

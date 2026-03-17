@@ -40,6 +40,39 @@ pub struct StaticRouteRule {
     pub port_mappings: Vec<PortMapping>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DnsProvider {
+    #[default]
+    None,
+    Cloudflare,
+    Porkbun,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsConfig {
+    pub provider: DnsProvider,
+    /// Whether credentials are stored in the keyring (not the actual secrets).
+    pub has_credentials: bool,
+}
+
+impl Default for DnsConfig {
+    fn default() -> Self {
+        Self {
+            provider: DnsProvider::None,
+            has_credentials: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CertInfo {
+    pub configured: bool,
+    pub domain: Option<String>,
+    pub expiry: Option<String>,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub domain: String,
@@ -47,6 +80,8 @@ pub struct AppConfig {
     pub static_routes: Vec<Gateway>,
     #[serde(default)]
     pub route_rules: Vec<StaticRouteRule>,
+    #[serde(default)]
+    pub dns_provider: DnsProvider,
 }
 
 impl Default for AppConfig {
@@ -56,6 +91,7 @@ impl Default for AppConfig {
             caddy_image: "caddy:2".to_string(),
             static_routes: Vec::new(),
             route_rules: Vec::new(),
+            dns_provider: DnsProvider::None,
         }
     }
 }

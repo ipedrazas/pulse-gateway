@@ -90,12 +90,12 @@ The Settings page is extended with DNS provider selection (Cloudflare or Porkbun
 
 ### Acceptance criteria
 
-- [ ] Settings UI extended with DNS provider selector and API key fields
-- [ ] Credentials stored securely in system keyring via `keyring` crate
-- [ ] Backend configures Caddy's TLS automation for wildcard DNS-01 challenge using stored credentials
-- [ ] Wildcard certificate is successfully provisioned on first setup
-- [ ] Certificate expiration date is retrieved and displayed in the UI
-- [ ] Settings persist across app restarts
+- [x] Settings UI extended with DNS provider selector and API key fields
+- [x] Credentials stored securely in system keyring via `keyring` crate
+- [x] Backend configures Caddy's TLS automation for wildcard DNS-01 challenge using stored credentials
+- [x] Wildcard certificate is successfully provisioned on first setup
+- [x] Certificate expiration date is retrieved and displayed in the UI
+- [x] Settings persist across app restarts
 
 ---
 
