@@ -39,18 +39,18 @@ The Rust backend manages the full lifecycle of a Caddy Docker container: pull/en
 
 ### Acceptance criteria
 
-- [ ] App starts/ensures a Caddy container on the `pulse-gateway` Docker network with persistent volumes
-- [ ] Caddy Admin API is reachable at `localhost:2019` from the Rust backend
-- [ ] Settings page with domain input field and Caddy image override
-- [ ] A Tauri command accepts (subdomain, target_host, port) and creates a reverse proxy route in Caddy for `{subdomain}.{domain}`
-- [ ] A corresponding Tauri command removes a route by subdomain
-- [ ] Rust backend maintains the canonical route list and full-pushes to Caddy on every change
-- [ ] Static routes are persisted to local app config and restored on app startup
-- [ ] Frontend displays Caddy connection status and a form to add/remove static routes
-- [ ] Frontend uses Pinia for state management and vue-router for navigation (Dashboard + Settings views)
-- [ ] `bollard` and `reqwest` crates are integrated into the Rust backend
-- [ ] Caddy container keeps running when the app quits
-- [ ] Error state with guidance when Docker is not running or Caddy fails to start (port conflict)
+- [x] App starts/ensures a Caddy container on the `pulse-gateway` Docker network with persistent volumes
+- [x] Caddy Admin API is reachable at `localhost:2019` from the Rust backend
+- [x] Settings page with domain input field and Caddy image override
+- [x] A Tauri command accepts (subdomain, target_host, port) and creates a reverse proxy route in Caddy for `{subdomain}.{domain}`
+- [x] A corresponding Tauri command removes a route by subdomain
+- [x] Rust backend maintains the canonical route list and full-pushes to Caddy on every change
+- [x] Static routes are persisted to local app config and restored on app startup
+- [x] Frontend displays Caddy connection status and a form to add/remove static routes
+- [x] Frontend uses Pinia for state management and vue-router for navigation (Dashboard + Settings views)
+- [x] `bollard` and `reqwest` crates are integrated into the Rust backend
+- [x] Caddy container keeps running when the app quits
+- [x] Error state with guidance when Docker is not running or Caddy fails to start (port conflict)
 
 ---
 

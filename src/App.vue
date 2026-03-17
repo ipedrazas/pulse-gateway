@@ -1,160 +1,117 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-
-const greetMsg = ref("");
-const name = ref("");
-
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
-}
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
-
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
-    </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
-
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+  <div id="pulse-app">
+    <nav class="top-nav">
+      <div class="nav-brand">Pulse Gateway</div>
+      <div class="nav-links">
+        <router-link to="/">Dashboard</router-link>
+        <router-link to="/settings">Settings</router-link>
+      </div>
+    </nav>
+    <main class="content">
+      <router-view />
+    </main>
+  </div>
 </template>
 
-<style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
 <style>
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
-
   color: #0f0f0f;
   background-color: #f6f6f6;
-
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
 }
 
-.container {
+* {
+  box-sizing: border-box;
+}
+
+body {
   margin: 0;
-  padding-top: 10vh;
+  padding: 0;
+}
+
+.top-nav {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: #1a1a2e;
+  color: #fff;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+.nav-brand {
+  font-weight: 700;
+  font-size: 1.1rem;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+.nav-links {
   display: flex;
-  justify-content: center;
+  gap: 1.5rem;
 }
 
-a {
+.nav-links a {
+  color: #aaa;
+  text-decoration: none;
   font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+  font-size: 0.95rem;
 }
 
-a:hover {
-  color: #535bf2;
+.nav-links a:hover,
+.nav-links a.router-link-active {
+  color: #fff;
 }
 
-h1 {
-  text-align: center;
+.content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
 }
 
 input,
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.95rem;
   font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
 }
 
 button {
   cursor: pointer;
+  background: #396cd8;
+  color: #fff;
+  border-color: transparent;
+  font-weight: 500;
 }
 
 button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
+  background: #2a5ab8;
 }
 
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
-    background-color: #2f2f2f;
+    background-color: #0f0f0f;
   }
 
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
+  input {
+    background: #1a1a1a;
+    border-color: #444;
+    color: #f6f6f6;
   }
 }
-
 </style>
