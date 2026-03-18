@@ -1,0 +1,80 @@
+version: "3"
+
+tasks:
+  install:
+    desc: Install frontend dependencies
+    cmds:
+      - bun install
+
+  dev:
+    desc: Run in development mode (Vite + Tauri)
+    cmds:
+      - bun run tauri dev
+
+  build:
+    desc: Build for production
+    deps: [install]
+    cmds:
+      - bun run tauri build
+
+  build:frontend:
+    desc: Build frontend only
+    cmds:
+      - bun run build
+
+  build:backend:
+    desc: Build Rust backend only
+    dir: src-tauri
+    cmds:
+      - cargo build
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test:backend
+      - task: test:frontend
+
+  test:backend:
+    desc: Run Rust tests
+    dir: src-tauri
+    cmds:
+      - cargo test
+
+  test:frontend:
+    desc: Type-check frontend
+    cmds:
+      - npx vue-tsc --noEmit
+
+  check:
+    desc: Run all checks (type-check + cargo check)
+    cmds:
+      - task: check:backend
+      - task: check:frontend
+
+  check:backend:
+    desc: Run cargo check
+    dir: src-tauri
+    cmds:
+      - cargo check
+
+  check:frontend:
+    desc: Type-check Vue frontend
+    cmds:
+      - npx vue-tsc --noEmit
+
+  lint:
+    desc: Lint Rust code
+    dir: src-tauri
+    cmds:
+      - cargo clippy -- -D warnings
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf dist
+      - cd src-tauri && cargo clean
+
+  preview:
+    desc: Preview production frontend build
+    cmds:
+      - bun run preview

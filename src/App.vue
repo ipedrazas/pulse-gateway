@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import pulseLogo from "./assets/pulse.svg";
 </script>
 
 <template>
   <div id="pulse-app">
     <nav class="top-nav">
-      <div class="nav-brand">Pulse Gateway</div>
+      <div class="nav-brand">
+        <img :src="pulseLogo" alt="Pulse" class="nav-logo" />
+        Pulse Gateway
+      </div>
       <div class="nav-links">
         <router-link to="/">Dashboard</router-link>
         <router-link to="/settings">Settings</router-link>
@@ -49,8 +53,16 @@ body {
 }
 
 .nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1.1rem;
+}
+
+.nav-logo {
+  width: 24px;
+  height: 24px;
 }
 
 .nav-links {
