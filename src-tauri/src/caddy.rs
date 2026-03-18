@@ -46,29 +46,44 @@ fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvid
         }
     });
 
-    // If we have a domain, add a wildcard TLS automation policy so Caddy
-    // requests a single *.domain certificate via DNS-01 instead of
-    // per-route certificates via HTTP-01.
+    // If we have a domain, configure DNS-01 as the default ACME challenge
+    // so all subdomain certificates are issued via the DNS provider.
     if !domain.is_empty() {
-        let wildcard = format!("*.{domain}");
         let provider = dns_provider_config(dns_provider);
-        config["apps"]["tls"] = json!({
-            "automation": {
-                "policies": [
+
+        // Collect all route subjects so the policy covers them explicitly.
+        let subjects: Vec<String> = routes
+            .iter()
+            .map(|gw| {
+                if domain.is_empty() {
+                    gw.subdomain.clone()
+                } else {
+                    format!("{}.{}", gw.subdomain, domain)
+                }
+            })
+            .collect();
+
+        let mut policies = vec![];
+
+        if !subjects.is_empty() {
+            policies.push(json!({
+                "subjects": subjects,
+                "issuers": [
                     {
-                        "subjects": [wildcard],
-                        "issuers": [
-                            {
-                                "module": "acme",
-                                "challenges": {
-                                    "dns": {
-                                        "provider": provider
-                                    }
-                                }
+                        "module": "acme",
+                        "challenges": {
+                            "dns": {
+                                "provider": provider
                             }
-                        ]
+                        }
                     }
                 ]
+            }));
+        }
+
+        config["apps"]["tls"] = json!({
+            "automation": {
+                "policies": policies
             }
         });
     }
@@ -122,8 +137,9 @@ pub async fn push_routes(
     Ok(())
 }
 
-/// Check certificate status by probing localhost:443 with openssl.
-pub fn get_cert_info(domain: &str, has_env_vars: bool) -> CertInfo {
+/// Check certificate status by probing routed subdomains via openssl.
+/// Tries each route until a valid cert is found.
+pub fn get_cert_info(domain: &str, has_env_vars: bool, routes: &[Gateway]) -> CertInfo {
     if domain.is_empty() {
         return CertInfo {
             has_env_vars,
@@ -136,25 +152,42 @@ pub fn get_cert_info(domain: &str, has_env_vars: bool) -> CertInfo {
         };
     }
 
-    match get_cert_details_openssl(domain) {
-        Some(details) => CertInfo {
-            has_env_vars,
-            domain: Some(format!("*.{domain}")),
-            issuer: details.issuer,
-            not_before: details.not_before,
-            not_after: details.not_after,
-            subject_alt_names: details.sans,
-            error: None,
-        },
-        None => CertInfo {
+    if routes.is_empty() {
+        return CertInfo {
             has_env_vars,
             domain: Some(format!("*.{domain}")),
             issuer: None,
             not_before: None,
             not_after: None,
             subject_alt_names: None,
-            error: Some("Could not retrieve certificate. Is Caddy running with HTTPS?".to_string()),
-        },
+            error: Some("No routes configured yet.".to_string()),
+        };
+    }
+
+    // Try each route until we find one with a valid cert
+    for gw in routes {
+        let hostname = format!("{}.{}", gw.subdomain, domain);
+        if let Some(details) = get_cert_details_openssl(&hostname) {
+            return CertInfo {
+                has_env_vars,
+                domain: Some(format!("*.{domain}")),
+                issuer: details.issuer,
+                not_before: details.not_before,
+                not_after: details.not_after,
+                subject_alt_names: details.sans,
+                error: None,
+            };
+        }
+    }
+
+    CertInfo {
+        has_env_vars,
+        domain: Some(format!("*.{domain}")),
+        issuer: None,
+        not_before: None,
+        not_after: None,
+        subject_alt_names: None,
+        error: Some("No valid certificates found yet. Certs may still be provisioning.".to_string()),
     }
 }
 
@@ -165,10 +198,9 @@ struct CertDetails {
     sans: Option<String>,
 }
 
-fn get_cert_details_openssl(domain: &str) -> Option<CertDetails> {
+fn get_cert_details_openssl(hostname: &str) -> Option<CertDetails> {
     use std::process::Command;
 
-    let hostname = format!("test.{domain}");
     let output = Command::new("sh")
         .args([
             "-c",

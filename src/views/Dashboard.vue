@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGatewayStore } from "../stores/gateway";
 import { useSettingsStore } from "../stores/settings";
@@ -12,7 +12,6 @@ const newTargetHost = ref("");
 const newPort = ref<number | undefined>();
 const error = ref("");
 const logContainer = ref<HTMLElement | null>(null);
-let certPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const staticGateways = computed(() =>
   gateway.allGateways.filter((g) => g.source === "static")
@@ -26,34 +25,7 @@ onMounted(async () => {
   await settings.fetchEnvVars();
   await settings.fetchCertInfo();
   await gateway.init();
-  startCertPollingIfNeeded();
 });
-
-onUnmounted(() => {
-  stopCertPolling();
-});
-
-// When cert becomes ready, stop polling
-watch(certReady, (ready) => {
-  if (ready) {
-    stopCertPolling();
-  }
-});
-
-function startCertPollingIfNeeded() {
-  if (hasTls.value && !certReady.value && !certPollTimer) {
-    certPollTimer = setInterval(async () => {
-      await settings.fetchCertInfo();
-    }, 5000);
-  }
-}
-
-function stopCertPolling() {
-  if (certPollTimer) {
-    clearInterval(certPollTimer);
-    certPollTimer = null;
-  }
-}
 
 // Auto-scroll log to bottom
 watch(
@@ -66,20 +38,17 @@ watch(
   }
 );
 
-function gatewayStatus(): "secure" | "provisioning" | "proxying" {
-  if (!hasTls.value) return "proxying";
-  if (!certReady.value) return "provisioning";
-  return "secure";
+function gatewayStatus(): "ssl" | "proxy" {
+  if (hasTls.value && certReady.value) return "ssl";
+  return "proxy";
 }
 
 function statusLabel(status: string): string {
   switch (status) {
-    case "secure":
-      return "Secure";
-    case "provisioning":
-      return "Provisioning";
-    case "proxying":
-      return "Proxying";
+    case "ssl":
+      return "SSL";
+    case "proxy":
+      return "Proxy";
     default:
       return status;
   }
@@ -105,7 +74,6 @@ async function openGateway(subdomain: string) {
 async function handleStartCaddy() {
   await gateway.startCaddy();
   await settings.fetchCertInfo();
-  startCertPollingIfNeeded();
 }
 
 async function handleStopCaddy() {
@@ -370,15 +338,11 @@ async function handleRemoveRoute(subdomain: string) {
   background: #e2e3e5;
   color: #383d41;
 }
-.badge-secure {
+.badge-ssl {
   background: #d4edda;
   color: #155724;
 }
-.badge-provisioning {
-  background: #cce5ff;
-  color: #004085;
-}
-.badge-proxying {
+.badge-proxy {
   background: #fff3cd;
   color: #856404;
 }
@@ -519,7 +483,7 @@ async function handleRemoveRoute(subdomain: string) {
     background: #1a1a1a;
   }
   .badge-ok,
-  .badge-secure {
+  .badge-ssl {
     background: #1e3a2f;
     color: #75d99a;
   }
@@ -527,10 +491,6 @@ async function handleRemoveRoute(subdomain: string) {
   .badge-error {
     background: #3a1e1e;
     color: #e88;
-  }
-  .badge-provisioning {
-    background: #1e2a3a;
-    color: #7ab8e8;
   }
   .badge-auto {
     background: #1e2a3a;
@@ -540,7 +500,7 @@ async function handleRemoveRoute(subdomain: string) {
     background: #2a2a2a;
     color: #aaa;
   }
-  .badge-proxying {
+  .badge-proxy {
     background: #3a3420;
     color: #e0c870;
   }

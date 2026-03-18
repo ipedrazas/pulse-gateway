@@ -10,25 +10,15 @@ use crate::AppState;
 
 /// Resolve env var entries from config to (key, value) pairs using keyring.
 fn resolve_env_vars(config: &AppConfig) -> Vec<(String, String)> {
-    eprintln!("[resolve_env_vars] config has {} env var entries", config.caddy_env_vars.len());
-    let result: Vec<(String, String)> = config
+    config
         .caddy_env_vars
         .iter()
         .filter_map(|entry| {
-            match credentials::get_value(&entry.key) {
-                Ok(val) => {
-                    eprintln!("[resolve_env_vars] resolved '{}' (len={})", entry.key, val.len());
-                    Some((entry.key.clone(), val))
-                }
-                Err(e) => {
-                    eprintln!("[resolve_env_vars] FAILED to resolve '{}': {e}", entry.key);
-                    None
-                }
-            }
+            credentials::get_value(&entry.key)
+                .ok()
+                .map(|val| (entry.key.clone(), val))
         })
-        .collect();
-    eprintln!("[resolve_env_vars] resolved {} of {} env vars", result.len(), config.caddy_env_vars.len());
-    result
+        .collect()
 }
 
 #[tauri::command]
@@ -236,30 +226,14 @@ pub async fn save_env_var(
 
     // Store value in keyring/file
     if !value.is_empty() {
-        eprintln!("[save_env_var] storing value for key='{key}', value_len={}", value.len());
         credentials::store_value(&key, &value)?;
-    } else {
-        eprintln!("[save_env_var] value is empty for key='{key}', skipping store");
-    }
-
-    // Verify it was stored
-    let stored = credentials::has_value(&key);
-    eprintln!("[save_env_var] has_value('{key}') = {stored}");
-    if stored {
-        if let Ok(v) = credentials::get_value(&key) {
-            eprintln!("[save_env_var] get_value('{key}') = '{}...' (len={})", &v[..v.len().min(4)], v.len());
-        }
     }
 
     // Return updated list
     let result = app_config
         .caddy_env_vars
         .iter()
-        .map(|entry| {
-            let has = credentials::has_value(&entry.key);
-            eprintln!("[save_env_var] returning key='{}', has_value={}", entry.key, has);
-            (entry.key.clone(), has)
-        })
+        .map(|entry| (entry.key.clone(), credentials::has_value(&entry.key)))
         .collect();
     Ok(result)
 }
@@ -285,11 +259,14 @@ pub async fn remove_env_var(
 
 #[tauri::command]
 pub async fn get_cert_info(
+    state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<CertInfo, String> {
     let config = config::load_config(&app_handle);
     let has_env_vars = !config.caddy_env_vars.is_empty();
-    Ok(caddy::get_cert_info(&config.domain, has_env_vars))
+    let auto = state.auto_gateways.lock().await;
+    let combined = watcher::combine_routes(&config.static_routes, &auto);
+    Ok(caddy::get_cert_info(&config.domain, has_env_vars, &combined))
 }
 
 #[tauri::command]
