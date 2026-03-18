@@ -44,7 +44,10 @@ pub struct StaticRouteRule {
 pub struct CertInfo {
     pub has_env_vars: bool,
     pub domain: Option<String>,
-    pub expiry: Option<String>,
+    pub issuer: Option<String>,
+    pub not_before: Option<String>,
+    pub not_after: Option<String>,
+    pub subject_alt_names: Option<String>,
     pub error: Option<String>,
 }
 

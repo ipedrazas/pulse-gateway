@@ -32,7 +32,7 @@ fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
         })
         .collect();
 
-    json!({
+    let mut config = json!({
         "apps": {
             "http": {
                 "servers": {
@@ -43,7 +43,38 @@ fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
                 }
             }
         }
-    })
+    });
+
+    // If we have a domain, add a wildcard TLS automation policy so Caddy
+    // requests a single *.domain certificate via DNS-01 instead of
+    // per-route certificates via HTTP-01.
+    if !domain.is_empty() {
+        let wildcard = format!("*.{domain}");
+        config["apps"]["tls"] = json!({
+            "automation": {
+                "policies": [
+                    {
+                        "subjects": [wildcard],
+                        "issuers": [
+                            {
+                                "module": "acme",
+                                "challenges": {
+                                    "dns": {
+                                        "provider": {
+                                            "name": "cloudflare",
+                                            "api_token": "{env.CLOUDFLARE_API_TOKEN}"
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+    }
+
+    config
 }
 
 pub async fn push_routes(
@@ -74,22 +105,44 @@ pub fn get_cert_info(domain: &str, has_env_vars: bool) -> CertInfo {
         return CertInfo {
             has_env_vars,
             domain: None,
-            expiry: None,
+            issuer: None,
+            not_before: None,
+            not_after: None,
+            subject_alt_names: None,
             error: None,
         };
     }
 
-    let expiry = get_cert_expiry_openssl(domain);
-
-    CertInfo {
-        has_env_vars,
-        domain: Some(format!("*.{domain}")),
-        expiry,
-        error: None,
+    match get_cert_details_openssl(domain) {
+        Some(details) => CertInfo {
+            has_env_vars,
+            domain: Some(format!("*.{domain}")),
+            issuer: details.issuer,
+            not_before: details.not_before,
+            not_after: details.not_after,
+            subject_alt_names: details.sans,
+            error: None,
+        },
+        None => CertInfo {
+            has_env_vars,
+            domain: Some(format!("*.{domain}")),
+            issuer: None,
+            not_before: None,
+            not_after: None,
+            subject_alt_names: None,
+            error: Some("Could not retrieve certificate. Is Caddy running with HTTPS?".to_string()),
+        },
     }
 }
 
-fn get_cert_expiry_openssl(domain: &str) -> Option<String> {
+struct CertDetails {
+    issuer: Option<String>,
+    not_before: Option<String>,
+    not_after: Option<String>,
+    sans: Option<String>,
+}
+
+fn get_cert_details_openssl(domain: &str) -> Option<CertDetails> {
     use std::process::Command;
 
     let hostname = format!("test.{domain}");
@@ -97,7 +150,7 @@ fn get_cert_expiry_openssl(domain: &str) -> Option<String> {
         .args([
             "-c",
             &format!(
-                "echo | openssl s_client -connect 127.0.0.1:443 -servername {} 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null",
+                "echo | openssl s_client -connect 127.0.0.1:443 -servername {} 2>/dev/null | openssl x509 -noout -issuer -startdate -enddate -ext subjectAltName 2>/dev/null",
                 hostname
             ),
         ])
@@ -105,8 +158,43 @@ fn get_cert_expiry_openssl(domain: &str) -> Option<String> {
         .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .trim()
-        .strip_prefix("notAfter=")
-        .map(|s| s.to_string())
+    if stdout.trim().is_empty() {
+        return None;
+    }
+
+    let mut issuer = None;
+    let mut not_before = None;
+    let mut not_after = None;
+    let mut sans = None;
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if let Some(val) = line.strip_prefix("issuer=") {
+            // Extract CN from issuer string like "/C=US/O=Let's Encrypt/CN=R11"
+            issuer = Some(
+                val.split("CN = ").nth(1)
+                    .or_else(|| val.split("CN=").nth(1))
+                    .unwrap_or(val)
+                    .to_string()
+            );
+        } else if let Some(val) = line.strip_prefix("notBefore=") {
+            not_before = Some(val.to_string());
+        } else if let Some(val) = line.strip_prefix("notAfter=") {
+            not_after = Some(val.to_string());
+        } else if line.starts_with("DNS:") {
+            sans = Some(
+                line.split(", ")
+                    .map(|s| s.trim_start_matches("DNS:"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+
+    Some(CertDetails {
+        issuer,
+        not_before,
+        not_after,
+        sans,
+    })
 }

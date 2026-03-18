@@ -41,6 +41,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_caddy_status,
             commands::start_caddy,
+            commands::stop_caddy,
             commands::get_routes,
             commands::get_all_gateways,
             commands::add_route,

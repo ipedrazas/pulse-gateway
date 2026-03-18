@@ -10,7 +10,10 @@ export interface AppConfig {
 export interface CertInfo {
   has_env_vars: boolean;
   domain: string | null;
-  expiry: string | null;
+  issuer: string | null;
+  not_before: string | null;
+  not_after: string | null;
+  subject_alt_names: string | null;
   error: string | null;
 }
 
@@ -30,7 +33,10 @@ export const useSettingsStore = defineStore("settings", () => {
   const certInfo = ref<CertInfo>({
     has_env_vars: false,
     domain: null,
-    expiry: null,
+    issuer: null,
+    not_before: null,
+    not_after: null,
+    subject_alt_names: null,
     error: null,
   });
 

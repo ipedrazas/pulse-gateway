@@ -237,6 +237,14 @@ async fn check_needs_recreate(
     false
 }
 
+pub async fn stop_caddy(docker: &Docker) -> Result<(), String> {
+    docker
+        .stop_container(CADDY_CONTAINER_NAME, None)
+        .await
+        .map_err(|e| docker_err("Failed to stop Caddy", e))?;
+    Ok(())
+}
+
 pub async fn is_caddy_running(docker: &Docker) -> bool {
     let filters: HashMap<String, Vec<String>> = HashMap::from([(
         "name".to_string(),

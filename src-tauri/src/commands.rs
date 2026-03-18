@@ -93,6 +93,25 @@ pub async fn start_caddy(
 }
 
 #[tauri::command]
+pub async fn stop_caddy(
+    state: State<'_, AppState>,
+) -> Result<CaddyStatus, String> {
+    if let Err(e) = docker::stop_caddy(&state.docker).await {
+        return Ok(CaddyStatus {
+            running: true,
+            api_reachable: true,
+            error: Some(e),
+        });
+    }
+
+    Ok(CaddyStatus {
+        running: false,
+        api_reachable: false,
+        error: None,
+    })
+}
+
+#[tauri::command]
 pub async fn get_routes(app_handle: tauri::AppHandle) -> Result<Vec<Gateway>, String> {
     let config = config::load_config(&app_handle);
     Ok(config.static_routes)

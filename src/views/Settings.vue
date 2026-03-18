@@ -148,13 +148,26 @@ async function handleRefreshCert() {
           <span>Wildcard:</span>
           <span>{{ settings.certInfo.domain }}</span>
         </div>
-        <div v-if="settings.certInfo.expiry" class="cert-row">
+        <div v-if="settings.certInfo.subject_alt_names" class="cert-row">
+          <span>SANs:</span>
+          <span>{{ settings.certInfo.subject_alt_names }}</span>
+        </div>
+        <div v-if="settings.certInfo.issuer" class="cert-row">
+          <span>Issuer:</span>
+          <span>{{ settings.certInfo.issuer }}</span>
+        </div>
+        <div v-if="settings.certInfo.not_before" class="cert-row">
+          <span>Issued:</span>
+          <span>{{ settings.certInfo.not_before }}</span>
+        </div>
+        <div v-if="settings.certInfo.not_after" class="cert-row">
           <span>Expires:</span>
-          <span>{{ settings.certInfo.expiry }}</span>
+          <span>{{ settings.certInfo.not_after }}</span>
         </div>
         <div v-if="settings.certInfo.error" class="cert-error">
           {{ settings.certInfo.error }}
         </div>
+        <p class="cert-note">Caddy auto-renews certificates ~30 days before expiry. Restart Caddy to force a renewal check.</p>
         <button class="btn-secondary" @click="handleRefreshCert">Refresh</button>
       </div>
     </section>
@@ -316,6 +329,12 @@ async function handleRefreshCert() {
   color: #721c24;
   font-size: 0.9rem;
   margin: 0.5rem 0;
+}
+
+.cert-note {
+  color: #888;
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0.5rem;
 }
 
 .btn-secondary {

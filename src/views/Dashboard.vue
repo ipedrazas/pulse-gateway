@@ -77,6 +77,10 @@ async function handleStartCaddy() {
   await gateway.startCaddy();
 }
 
+async function handleStopCaddy() {
+  await gateway.stopCaddy();
+}
+
 async function handleAddRoute() {
   error.value = "";
   if (!newSubdomain.value || !newTargetHost.value || !newPort.value) {
@@ -139,13 +143,23 @@ async function handleRemoveRoute(subdomain: string) {
         <div v-if="gateway.caddyStatus.error" class="status-error">
           {{ gateway.caddyStatus.error }}
         </div>
-        <button
-          v-if="!gateway.caddyStatus.running"
-          @click="handleStartCaddy"
-          :disabled="gateway.loading"
-        >
-          {{ gateway.loading ? "Starting..." : "Start Caddy" }}
-        </button>
+        <div class="status-actions">
+          <button
+            v-if="!gateway.caddyStatus.running"
+            @click="handleStartCaddy"
+            :disabled="gateway.loading"
+          >
+            {{ gateway.loading ? "Starting..." : "Start Caddy" }}
+          </button>
+          <button
+            v-if="gateway.caddyStatus.running"
+            class="btn-stop"
+            @click="handleStopCaddy"
+            :disabled="gateway.loading"
+          >
+            {{ gateway.loading ? "Stopping..." : "Stop Caddy" }}
+          </button>
+        </div>
       </div>
     </section>
 
@@ -332,6 +346,20 @@ async function handleRemoveRoute(subdomain: string) {
 .badge-error {
   background: #f8d7da;
   color: #721c24;
+}
+
+.status-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-stop {
+  background: #dc3545;
+  color: #fff;
+}
+.btn-stop:hover:not(:disabled) {
+  background: #c82333;
 }
 
 .status-error {

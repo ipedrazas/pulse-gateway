@@ -92,6 +92,21 @@ export const useGatewayStore = defineStore("gateway", () => {
     }
   }
 
+  async function stopCaddy() {
+    loading.value = true;
+    try {
+      caddyStatus.value = await invoke("stop_caddy");
+    } catch (e) {
+      caddyStatus.value = {
+        running: false,
+        api_reachable: false,
+        error: String(e),
+      };
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function fetchAllGateways() {
     try {
       allGateways.value = await invoke("get_all_gateways");
@@ -137,6 +152,7 @@ export const useGatewayStore = defineStore("gateway", () => {
     init,
     fetchStatus,
     startCaddy,
+    stopCaddy,
     fetchAllGateways,
     fetchStaticRoutes,
     fetchEventLog,

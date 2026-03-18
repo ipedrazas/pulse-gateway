@@ -281,7 +281,7 @@ fn build_auto_routes(
     let mut routes = Vec::new();
 
     for (port, subdomain_override) in &ports {
-        let base_subdomain = if let Some(tmpl) = subdomain_override {
+        let raw_subdomain = if let Some(tmpl) = subdomain_override {
             tmpl.replace("{name}", &info.name)
         } else if ports.len() == 1 {
             info.name.clone()
@@ -289,6 +289,7 @@ fn build_auto_routes(
             format!("{}-{}", info.name, port)
         };
 
+        let base_subdomain = sanitize_subdomain(&raw_subdomain);
         let subdomain = resolve_collision(&base_subdomain, existing_auto, static_routes, &routes);
 
         routes.push(Gateway {
@@ -335,6 +336,31 @@ fn image_matches(image: &str, pattern: &str) -> bool {
     } else {
         image == pattern
     }
+}
+
+/// Sanitize a string into a valid DNS subdomain label:
+/// - lowercase
+/// - replace underscores and dots with hyphens
+/// - strip any character that isn't alphanumeric or hyphen
+/// - collapse consecutive hyphens
+/// - trim leading/trailing hyphens
+fn sanitize_subdomain(name: &str) -> String {
+    let s: String = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c == '_' || c == '.' { '-' } else { c })
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+
+    // Collapse consecutive hyphens and trim
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == '-' && result.ends_with('-') {
+            continue;
+        }
+        result.push(c);
+    }
+    result.trim_matches('-').to_string()
 }
 
 fn resolve_collision(
