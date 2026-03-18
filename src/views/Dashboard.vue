@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGatewayStore } from "../stores/gateway";
 import { useSettingsStore } from "../stores/settings";
@@ -12,18 +12,48 @@ const newTargetHost = ref("");
 const newPort = ref<number | undefined>();
 const error = ref("");
 const logContainer = ref<HTMLElement | null>(null);
+let certPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const staticGateways = computed(() =>
   gateway.allGateways.filter((g) => g.source === "static")
 );
 
 const hasTls = computed(() => settings.envVars.length > 0);
+const certReady = computed(() => !!settings.certInfo.not_after);
 
 onMounted(async () => {
   await settings.fetchSettings();
   await settings.fetchEnvVars();
+  await settings.fetchCertInfo();
   await gateway.init();
+  startCertPollingIfNeeded();
 });
+
+onUnmounted(() => {
+  stopCertPolling();
+});
+
+// When cert becomes ready, stop polling
+watch(certReady, (ready) => {
+  if (ready) {
+    stopCertPolling();
+  }
+});
+
+function startCertPollingIfNeeded() {
+  if (hasTls.value && !certReady.value && !certPollTimer) {
+    certPollTimer = setInterval(async () => {
+      await settings.fetchCertInfo();
+    }, 5000);
+  }
+}
+
+function stopCertPolling() {
+  if (certPollTimer) {
+    clearInterval(certPollTimer);
+    certPollTimer = null;
+  }
+}
 
 // Auto-scroll log to bottom
 watch(
@@ -36,21 +66,20 @@ watch(
   }
 );
 
-function gatewayStatus(gw: { source: string }): "secure" | "proxying" | "error" {
-  if (gw.source === "static") {
-    return hasTls.value ? "secure" : "proxying";
-  }
-  return hasTls.value ? "secure" : "proxying";
+function gatewayStatus(): "secure" | "provisioning" | "proxying" {
+  if (!hasTls.value) return "proxying";
+  if (!certReady.value) return "provisioning";
+  return "secure";
 }
 
 function statusLabel(status: string): string {
   switch (status) {
     case "secure":
       return "Secure";
+    case "provisioning":
+      return "Provisioning";
     case "proxying":
       return "Proxying";
-    case "error":
-      return "Error";
     default:
       return status;
   }
@@ -75,6 +104,8 @@ async function openGateway(subdomain: string) {
 
 async function handleStartCaddy() {
   await gateway.startCaddy();
+  await settings.fetchCertInfo();
+  startCertPollingIfNeeded();
 }
 
 async function handleStopCaddy() {
@@ -212,10 +243,10 @@ async function handleRemoveRoute(subdomain: string) {
               <span
                 :class="[
                   'badge',
-                  `badge-${gatewayStatus(gw)}`,
+                  `badge-${gatewayStatus()}`,
                 ]"
               >
-                {{ statusLabel(gatewayStatus(gw)) }}
+                {{ statusLabel(gatewayStatus()) }}
               </span>
             </td>
           </tr>
@@ -229,11 +260,15 @@ async function handleRemoveRoute(subdomain: string) {
     <!-- Static Routes -->
     <section class="section">
       <h2>Static Routes</h2>
+      <p class="section-desc">
+        Route any service — Docker containers or apps running on your Mac.
+        Use <code>localhost</code> for host apps (automatically translated for Docker networking).
+      </p>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
         <input v-model="newSubdomain" placeholder="subdomain" />
         <input
           v-model="newTargetHost"
-          placeholder="target host (e.g. localhost)"
+          placeholder="localhost or container name"
         />
         <input v-model.number="newPort" type="number" placeholder="port" />
         <button type="submit">Add Route</button>
@@ -339,6 +374,10 @@ async function handleRemoveRoute(subdomain: string) {
   background: #d4edda;
   color: #155724;
 }
+.badge-provisioning {
+  background: #cce5ff;
+  color: #004085;
+}
 .badge-proxying {
   background: #fff3cd;
   color: #856404;
@@ -384,6 +423,19 @@ async function handleRemoveRoute(subdomain: string) {
 }
 .subdomain-link:hover {
   text-decoration: underline;
+}
+
+.section-desc {
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-desc code {
+  background: rgba(150, 150, 150, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
 }
 
 .add-route-form {
@@ -475,6 +527,10 @@ async function handleRemoveRoute(subdomain: string) {
   .badge-error {
     background: #3a1e1e;
     color: #e88;
+  }
+  .badge-provisioning {
+    background: #1e2a3a;
+    color: #7ab8e8;
   }
   .badge-auto {
     background: #1e2a3a;

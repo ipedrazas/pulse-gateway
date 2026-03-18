@@ -22,11 +22,12 @@ fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvid
             } else {
                 format!("{}.{}", gw.subdomain, domain)
             };
+            let target = resolve_target_host(&gw.target_host);
             json!({
                 "match": [{"host": [host]}],
                 "handle": [{
                     "handler": "reverse_proxy",
-                    "upstreams": [{"dial": format!("{}:{}", gw.target_host, gw.port)}]
+                    "upstreams": [{"dial": format!("{}:{}", target, gw.port)}]
                 }]
             })
         })
@@ -73,6 +74,15 @@ fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvid
     }
 
     config
+}
+
+/// Translate localhost references to host.docker.internal so Caddy
+/// (running inside Docker) can reach services on the host machine.
+fn resolve_target_host(host: &str) -> &str {
+    match host {
+        "localhost" | "127.0.0.1" | "0.0.0.0" | "host.docker.internal" => "host.docker.internal",
+        other => other,
+    }
 }
 
 fn dns_provider_config(provider: &DnsProvider) -> Value {
