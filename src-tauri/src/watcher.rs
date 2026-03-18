@@ -80,7 +80,7 @@ async fn reconcile(
     }
 
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
 
     log_event(
         event_log,
@@ -169,7 +169,7 @@ async fn handle_start(
         let app_config = config::load_config(app_handle);
         let gateways = auto_gateways.lock().await;
         let combined = combine_routes(&app_config.static_routes, &gateways);
-        let _ = caddy::push_routes(http_client, &combined, &app_config.domain).await;
+        let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
         return;
     }
 
@@ -208,7 +208,7 @@ async fn handle_start(
     gateways.extend(new_routes);
 
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
 
     emit_gateways(app_handle, &combined);
 }
@@ -251,7 +251,7 @@ async fn handle_stop(
 
     let app_config = config::load_config(app_handle);
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
 
     emit_gateways(app_handle, &combined);
 }

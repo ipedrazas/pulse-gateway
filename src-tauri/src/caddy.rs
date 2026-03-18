@@ -1,7 +1,7 @@
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::models::{CertInfo, Gateway};
+use crate::models::{CertInfo, DnsProvider, Gateway};
 
 const CADDY_ADMIN_URL: &str = "http://localhost:2019";
 
@@ -13,7 +13,7 @@ pub async fn check_health(client: &Client) -> bool {
         .is_ok()
 }
 
-fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
+fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvider) -> Value {
     let caddy_routes: Vec<Value> = routes
         .iter()
         .map(|gw| {
@@ -50,6 +50,7 @@ fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
     // per-route certificates via HTTP-01.
     if !domain.is_empty() {
         let wildcard = format!("*.{domain}");
+        let provider = dns_provider_config(dns_provider);
         config["apps"]["tls"] = json!({
             "automation": {
                 "policies": [
@@ -60,10 +61,7 @@ fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
                                 "module": "acme",
                                 "challenges": {
                                     "dns": {
-                                        "provider": {
-                                            "name": "cloudflare",
-                                            "api_token": "{env.CLOUDFLARE_API_TOKEN}"
-                                        }
+                                        "provider": provider
                                     }
                                 }
                             }
@@ -77,12 +75,27 @@ fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
     config
 }
 
+fn dns_provider_config(provider: &DnsProvider) -> Value {
+    match provider {
+        DnsProvider::Cloudflare => json!({
+            "name": "cloudflare",
+            "api_token": "{env.CLOUDFLARE_API_TOKEN}"
+        }),
+        DnsProvider::Porkbun => json!({
+            "name": "porkbun",
+            "api_key": "{env.PORKBUN_API_KEY}",
+            "api_secret_key": "{env.PORKBUN_API_SECRET}"
+        }),
+    }
+}
+
 pub async fn push_routes(
     client: &Client,
     routes: &[Gateway],
     domain: &str,
+    dns_provider: &DnsProvider,
 ) -> Result<(), String> {
-    let config = build_caddy_config(routes, domain);
+    let config = build_caddy_config(routes, domain, dns_provider);
 
     let resp = client
         .post(format!("{CADDY_ADMIN_URL}/load"))

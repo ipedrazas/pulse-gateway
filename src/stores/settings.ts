@@ -2,9 +2,12 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
+export type DnsProvider = "cloudflare" | "porkbun";
+
 export interface AppConfig {
   domain: string;
   caddy_image: string;
+  dns_provider: DnsProvider;
 }
 
 export interface CertInfo {
@@ -23,6 +26,7 @@ export type EnvVarInfo = [string, boolean];
 export const useSettingsStore = defineStore("settings", () => {
   const domain = ref("");
   const caddyImage = ref("caddy:2");
+  const dnsProvider = ref<DnsProvider>("cloudflare");
   const saving = ref(false);
 
   // Env vars for Caddy container
@@ -45,6 +49,7 @@ export const useSettingsStore = defineStore("settings", () => {
       const config: AppConfig = await invoke("get_settings");
       domain.value = config.domain;
       caddyImage.value = config.caddy_image;
+      dnsProvider.value = config.dns_provider;
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
@@ -56,9 +61,11 @@ export const useSettingsStore = defineStore("settings", () => {
       const config: AppConfig = await invoke("save_settings", {
         domain: domain.value,
         caddyImage: caddyImage.value,
+        dnsProvider: dnsProvider.value,
       });
       domain.value = config.domain;
       caddyImage.value = config.caddy_image;
+      dnsProvider.value = config.dns_provider;
     } finally {
       saving.value = false;
     }
@@ -100,6 +107,7 @@ export const useSettingsStore = defineStore("settings", () => {
   return {
     domain,
     caddyImage,
+    dnsProvider,
     saving,
     envVars,
     savingEnv,

@@ -71,9 +71,23 @@ async function handleRefreshCert() {
         </div>
 
         <div class="field">
+          <label for="dns-provider">DNS Provider</label>
+          <select id="dns-provider" v-model="settings.dnsProvider">
+            <option value="cloudflare">Cloudflare</option>
+            <option value="porkbun">Porkbun</option>
+          </select>
+          <small>DNS provider used for wildcard certificate DNS-01 challenge.</small>
+        </div>
+
+        <div class="field">
           <label for="caddy-image">Caddy Docker Image</label>
           <input id="caddy-image" v-model="settings.caddyImage" placeholder="caddy:2" />
-          <small>Use an image with DNS plugins for SSL (e.g. ghcr.io/caddybuilds/caddy-cloudflare:latest).</small>
+          <small v-if="settings.dnsProvider === 'cloudflare'">
+            Use an image with the Cloudflare DNS plugin (e.g. ghcr.io/caddybuilds/caddy-cloudflare:latest).
+          </small>
+          <small v-else-if="settings.dnsProvider === 'porkbun'">
+            Use an image with the Porkbun DNS plugin (e.g. ghcr.io/caddy-dns/porkbun:latest).
+          </small>
         </div>
 
         <div class="actions">
@@ -209,7 +223,8 @@ async function handleRefreshCert() {
   margin-bottom: 0.3rem;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   box-sizing: border-box;
 }

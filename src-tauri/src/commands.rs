@@ -4,7 +4,7 @@ use crate::caddy;
 use crate::config;
 use crate::credentials;
 use crate::docker;
-use crate::models::{AppConfig, CaddyStatus, CertInfo, EnvVarEntry, Gateway, LogEntry, StaticRouteRule};
+use crate::models::{AppConfig, CaddyStatus, CertInfo, DnsProvider, EnvVarEntry, Gateway, LogEntry, StaticRouteRule};
 use crate::watcher;
 use crate::AppState;
 
@@ -78,7 +78,7 @@ pub async fn start_caddy(
     if api_ready {
         let auto = state.auto_gateways.lock().await;
         let combined = watcher::combine_routes(&config.static_routes, &auto);
-        let _ = caddy::push_routes(&state.http_client, &combined, &config.domain).await;
+        let _ = caddy::push_routes(&state.http_client, &combined, &config.domain, &config.dns_provider).await;
     }
 
     Ok(CaddyStatus {
@@ -158,7 +158,7 @@ pub async fn add_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -178,7 +178,7 @@ pub async fn remove_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
+    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -194,10 +194,12 @@ pub async fn save_settings(
     app_handle: tauri::AppHandle,
     domain: String,
     caddy_image: String,
+    dns_provider: DnsProvider,
 ) -> Result<AppConfig, String> {
     let mut app_config = config::load_config(&app_handle);
     app_config.domain = domain;
     app_config.caddy_image = caddy_image;
+    app_config.dns_provider = dns_provider;
     config::save_config(&app_handle, &app_config)?;
     Ok(app_config)
 }

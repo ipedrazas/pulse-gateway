@@ -65,10 +65,21 @@ pub struct EnvVarEntry {
     pub key: String,
 }
 
+/// Supported DNS challenge providers for wildcard certificates.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DnsProvider {
+    #[default]
+    Cloudflare,
+    Porkbun,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub domain: String,
     pub caddy_image: String,
+    #[serde(default)]
+    pub dns_provider: DnsProvider,
     pub static_routes: Vec<Gateway>,
     #[serde(default)]
     pub route_rules: Vec<StaticRouteRule>,
@@ -81,6 +92,7 @@ impl Default for AppConfig {
         Self {
             domain: String::new(),
             caddy_image: "caddy:2".to_string(),
+            dns_provider: DnsProvider::default(),
             static_routes: Vec::new(),
             route_rules: Vec::new(),
             caddy_env_vars: Vec::new(),
