@@ -1,30 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref } from "vue";
 import { useSettingsStore } from "../stores/settings";
 
 const settings = useSettingsStore();
 const message = ref("");
-const dnsMessage = ref("");
+const envMessage = ref("");
 
-// DNS credential fields (never pre-filled — secrets stay in keyring)
-const selectedProvider = ref<"none" | "cloudflare" | "porkbun">("none");
-const cfToken = ref("");
-const pbKey = ref("");
-const pbSecret = ref("");
+// New env var form
+const newEnvKey = ref("");
+const newEnvValue = ref("");
 
 onMounted(async () => {
   await settings.fetchSettings();
-  await settings.fetchDnsConfig();
+  await settings.fetchEnvVars();
   await settings.fetchCertInfo();
-  selectedProvider.value = settings.dnsProvider;
 });
-
-watch(
-  () => settings.dnsProvider,
-  (val) => {
-    selectedProvider.value = val;
-  }
-);
 
 async function handleSaveGeneral() {
   message.value = "";
@@ -36,24 +26,28 @@ async function handleSaveGeneral() {
   }
 }
 
-async function handleSaveDns() {
-  dnsMessage.value = "";
+async function handleAddEnvVar() {
+  envMessage.value = "";
+  if (!newEnvKey.value || !newEnvValue.value) {
+    envMessage.value = "Both key and value are required.";
+    return;
+  }
   try {
-    await settings.saveDnsConfig(
-      selectedProvider.value,
-      cfToken.value || undefined,
-      pbKey.value || undefined,
-      pbSecret.value || undefined
-    );
-    // Clear credential fields after save
-    cfToken.value = "";
-    pbKey.value = "";
-    pbSecret.value = "";
-    dnsMessage.value = "DNS configuration saved.";
-    // Refresh cert info
-    await settings.fetchCertInfo();
+    await settings.saveEnvVar(newEnvKey.value, newEnvValue.value);
+    newEnvKey.value = "";
+    newEnvValue.value = "";
+    envMessage.value = "Env var saved. Restart Caddy to apply.";
   } catch (e) {
-    dnsMessage.value = "Error: " + String(e);
+    envMessage.value = "Error: " + String(e);
+  }
+}
+
+async function handleRemoveEnvVar(key: string) {
+  try {
+    await settings.removeEnvVar(key);
+    envMessage.value = "Removed. Restart Caddy to apply.";
+  } catch (e) {
+    envMessage.value = "Error: " + String(e);
   }
 }
 
@@ -79,7 +73,7 @@ async function handleRefreshCert() {
         <div class="field">
           <label for="caddy-image">Caddy Docker Image</label>
           <input id="caddy-image" v-model="settings.caddyImage" placeholder="caddy:2" />
-          <small>Pre-built image with DNS plugins. Change only if using a custom build.</small>
+          <small>Use an image with DNS plugins for SSL (e.g. ghcr.io/caddybuilds/caddy-cloudflare:latest).</small>
         </div>
 
         <div class="actions">
@@ -91,62 +85,53 @@ async function handleRefreshCert() {
       </form>
     </section>
 
-    <!-- DNS / SSL settings -->
+    <!-- Caddy Environment Variables -->
     <section class="section">
-      <h3>SSL / DNS Provider</h3>
-      <form class="settings-form" @submit.prevent="handleSaveDns">
-        <div class="field">
-          <label for="dns-provider">DNS Provider</label>
-          <select id="dns-provider" v-model="selectedProvider">
-            <option value="none">None (no SSL)</option>
-            <option value="cloudflare">Cloudflare</option>
-            <option value="porkbun">Porkbun</option>
-          </select>
-          <small>Used for DNS-01 challenge to provision wildcard SSL certificates.</small>
-        </div>
+      <h3>Caddy Environment Variables</h3>
+      <p class="section-desc">
+        Set environment variables passed to the Caddy container. Values are stored securely in the system keyring.
+        Restart Caddy after changes.
+      </p>
 
-        <!-- Cloudflare fields -->
-        <div v-if="selectedProvider === 'cloudflare'" class="field">
-          <label for="cf-token">API Token</label>
-          <input
-            id="cf-token"
-            v-model="cfToken"
-            type="password"
-            :placeholder="settings.hasCredentials ? '(stored in keyring — leave blank to keep)' : 'Cloudflare API token'"
-          />
-          <small>Stored securely in the system keyring.</small>
-        </div>
-
-        <!-- Porkbun fields -->
-        <template v-if="selectedProvider === 'porkbun'">
-          <div class="field">
-            <label for="pb-key">API Key</label>
-            <input
-              id="pb-key"
-              v-model="pbKey"
-              type="password"
-              :placeholder="settings.hasCredentials ? '(stored in keyring — leave blank to keep)' : 'Porkbun API key'"
-            />
-          </div>
-          <div class="field">
-            <label for="pb-secret">API Secret</label>
-            <input
-              id="pb-secret"
-              v-model="pbSecret"
-              type="password"
-              :placeholder="settings.hasCredentials ? '(stored in keyring — leave blank to keep)' : 'Porkbun API secret'"
-            />
-          </div>
-          <small class="field-note">Stored securely in the system keyring.</small>
-        </template>
-
-        <div class="actions">
-          <button type="submit" :disabled="settings.savingDns">
-            {{ settings.savingDns ? "Saving..." : "Save DNS Config" }}
-          </button>
-          <span v-if="dnsMessage" class="message">{{ dnsMessage }}</span>
-        </div>
+      <form class="env-form" @submit.prevent="handleAddEnvVar">
+        <input
+          v-model="newEnvKey"
+          placeholder="VARIABLE_NAME"
+          class="env-key"
+        />
+        <input
+          v-model="newEnvValue"
+          type="password"
+          placeholder="value"
+          class="env-value"
+        />
+        <button type="submit" :disabled="settings.savingEnv">Add</button>
       </form>
+      <div v-if="envMessage" class="env-message">{{ envMessage }}</div>
+
+      <table v-if="settings.envVars.length > 0" class="env-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="[key, hasValue] in settings.envVars" :key="key">
+            <td class="env-key-cell">{{ key }}</td>
+            <td>
+              <span :class="['badge', hasValue ? 'badge-ok' : 'badge-off']">
+                {{ hasValue ? "Stored" : "Missing" }}
+              </span>
+            </td>
+            <td>
+              <button class="btn-remove" @click="handleRemoveEnvVar(key)">Remove</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else class="empty-state">No environment variables configured.</p>
     </section>
 
     <!-- Certificate info -->
@@ -154,9 +139,9 @@ async function handleRefreshCert() {
       <h3>Certificate Status</h3>
       <div class="cert-card">
         <div class="cert-row">
-          <span>TLS:</span>
-          <span :class="['badge', settings.certInfo.configured ? 'badge-ok' : 'badge-off']">
-            {{ settings.certInfo.configured ? "Configured" : "Not configured" }}
+          <span>Env vars:</span>
+          <span :class="['badge', settings.certInfo.has_env_vars ? 'badge-ok' : 'badge-off']">
+            {{ settings.certInfo.has_env_vars ? "Configured" : "None" }}
           </span>
         </div>
         <div v-if="settings.certInfo.domain" class="cert-row">
@@ -191,6 +176,12 @@ async function handleRefreshCert() {
   padding-bottom: 0.4rem;
 }
 
+.section-desc {
+  color: #888;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
 .settings-form {
   max-width: 500px;
 }
@@ -205,14 +196,12 @@ async function handleRefreshCert() {
   margin-bottom: 0.3rem;
 }
 
-.field input,
-.field select {
+.field input {
   width: 100%;
   box-sizing: border-box;
 }
 
-.field small,
-.field-note {
+.field small {
   display: block;
   color: #888;
   margin-top: 0.3rem;
@@ -228,6 +217,84 @@ async function handleRefreshCert() {
 .message {
   font-size: 0.9rem;
   color: #555;
+}
+
+/* Env var editor */
+.env-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  max-width: 600px;
+}
+
+.env-key {
+  flex: 1;
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.9rem;
+}
+
+.env-value {
+  flex: 1.5;
+}
+
+.env-message {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.75rem;
+}
+
+.env-table {
+  width: 100%;
+  max-width: 600px;
+  border-collapse: collapse;
+}
+
+.env-table th,
+.env-table td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.env-key-cell {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.9rem;
+}
+
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge-ok {
+  background: #d4edda;
+  color: #155724;
+}
+
+.badge-off {
+  background: #e2e3e5;
+  color: #383d41;
+}
+
+.btn-remove {
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-remove:hover {
+  background: #c82333;
+}
+
+.empty-state {
+  color: #888;
+  padding: 1rem 0;
 }
 
 .cert-card {
@@ -251,23 +318,6 @@ async function handleRefreshCert() {
   margin: 0.5rem 0;
 }
 
-.badge {
-  padding: 0.2rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.badge-ok {
-  background: #d4edda;
-  color: #155724;
-}
-
-.badge-off {
-  background: #e2e3e5;
-  color: #383d41;
-}
-
 .btn-secondary {
   background: #6c757d;
   margin-top: 0.5rem;
@@ -275,15 +325,6 @@ async function handleRefreshCert() {
 
 .btn-secondary:hover {
   background: #5a6268;
-}
-
-select {
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  padding: 0.5rem 0.8rem;
-  font-size: 0.95rem;
-  font-family: inherit;
-  background: #fff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -305,10 +346,9 @@ select {
     color: #aaa;
   }
 
-  select {
-    background: #1a1a1a;
-    border-color: #444;
-    color: #f6f6f6;
+  .env-table th,
+  .env-table td {
+    border-bottom-color: #333;
   }
 }
 </style>

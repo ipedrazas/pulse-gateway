@@ -40,37 +40,26 @@ pub struct StaticRouteRule {
     pub port_mappings: Vec<PortMapping>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum DnsProvider {
-    #[default]
-    None,
-    Cloudflare,
-    Porkbun,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DnsConfig {
-    pub provider: DnsProvider,
-    /// Whether credentials are stored in the keyring (not the actual secrets).
-    pub has_credentials: bool,
-}
-
-impl Default for DnsConfig {
-    fn default() -> Self {
-        Self {
-            provider: DnsProvider::None,
-            has_credentials: false,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertInfo {
-    pub configured: bool,
+    pub has_env_vars: bool,
     pub domain: Option<String>,
     pub expiry: Option<String>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub message: String,
+}
+
+/// An env var to pass to the Caddy container. The key is stored in config,
+/// the value is stored in the system keyring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvVarEntry {
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +70,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub route_rules: Vec<StaticRouteRule>,
     #[serde(default)]
-    pub dns_provider: DnsProvider,
+    pub caddy_env_vars: Vec<EnvVarEntry>,
 }
 
 impl Default for AppConfig {
@@ -91,7 +80,7 @@ impl Default for AppConfig {
             caddy_image: "caddy:2".to_string(),
             static_routes: Vec::new(),
             route_rules: Vec::new(),
-            dns_provider: DnsProvider::None,
+            caddy_env_vars: Vec::new(),
         }
     }
 }

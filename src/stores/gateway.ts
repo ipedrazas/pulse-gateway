@@ -18,6 +18,14 @@ export interface CaddyStatus {
   error: string | null;
 }
 
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+const MAX_LOG_ENTRIES = 200;
+
 export const useGatewayStore = defineStore("gateway", () => {
   const allGateways = ref<Gateway[]>([]);
   const staticRoutes = ref<Gateway[]>([]);
@@ -27,20 +35,32 @@ export const useGatewayStore = defineStore("gateway", () => {
     error: null,
   });
   const loading = ref(false);
-  let eventUnlisten: (() => void) | null = null;
+  const eventLog = ref<LogEntry[]>([]);
+  let gatewayUnlisten: (() => void) | null = null;
+  let logUnlisten: (() => void) | null = null;
 
   async function init() {
-    await setupEventListener();
+    await setupEventListeners();
     await fetchStatus();
     await fetchAllGateways();
     await fetchStaticRoutes();
+    await fetchEventLog();
   }
 
-  async function setupEventListener() {
-    if (eventUnlisten) return;
-    eventUnlisten = await listen<Gateway[]>("gateways-changed", (event) => {
-      allGateways.value = event.payload;
-    });
+  async function setupEventListeners() {
+    if (!gatewayUnlisten) {
+      gatewayUnlisten = await listen<Gateway[]>("gateways-changed", (event) => {
+        allGateways.value = event.payload;
+      });
+    }
+    if (!logUnlisten) {
+      logUnlisten = await listen<LogEntry>("log-entry", (event) => {
+        eventLog.value.push(event.payload);
+        if (eventLog.value.length > MAX_LOG_ENTRIES) {
+          eventLog.value = eventLog.value.slice(-MAX_LOG_ENTRIES);
+        }
+      });
+    }
   }
 
   async function fetchStatus() {
@@ -88,6 +108,14 @@ export const useGatewayStore = defineStore("gateway", () => {
     }
   }
 
+  async function fetchEventLog() {
+    try {
+      eventLog.value = await invoke("get_event_log");
+    } catch (e) {
+      console.error("Failed to fetch event log:", e);
+    }
+  }
+
   async function addRoute(subdomain: string, targetHost: string, port: number) {
     staticRoutes.value = await invoke("add_route", {
       subdomain,
@@ -105,11 +133,13 @@ export const useGatewayStore = defineStore("gateway", () => {
     staticRoutes,
     caddyStatus,
     loading,
+    eventLog,
     init,
     fetchStatus,
     startCaddy,
     fetchAllGateways,
     fetchStaticRoutes,
+    fetchEventLog,
     addRoute,
     removeRoute,
   };

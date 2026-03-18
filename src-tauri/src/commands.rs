@@ -4,9 +4,32 @@ use crate::caddy;
 use crate::config;
 use crate::credentials;
 use crate::docker;
-use crate::models::{AppConfig, CaddyStatus, CertInfo, DnsConfig, DnsProvider, Gateway, StaticRouteRule};
+use crate::models::{AppConfig, CaddyStatus, CertInfo, EnvVarEntry, Gateway, LogEntry, StaticRouteRule};
 use crate::watcher;
 use crate::AppState;
+
+/// Resolve env var entries from config to (key, value) pairs using keyring.
+fn resolve_env_vars(config: &AppConfig) -> Vec<(String, String)> {
+    eprintln!("[resolve_env_vars] config has {} env var entries", config.caddy_env_vars.len());
+    let result: Vec<(String, String)> = config
+        .caddy_env_vars
+        .iter()
+        .filter_map(|entry| {
+            match credentials::get_value(&entry.key) {
+                Ok(val) => {
+                    eprintln!("[resolve_env_vars] resolved '{}' (len={})", entry.key, val.len());
+                    Some((entry.key.clone(), val))
+                }
+                Err(e) => {
+                    eprintln!("[resolve_env_vars] FAILED to resolve '{}': {e}", entry.key);
+                    None
+                }
+            }
+        })
+        .collect();
+    eprintln!("[resolve_env_vars] resolved {} of {} env vars", result.len(), config.caddy_env_vars.len());
+    result
+}
 
 #[tauri::command]
 pub async fn get_caddy_status(state: State<'_, AppState>) -> Result<CaddyStatus, String> {
@@ -25,6 +48,7 @@ pub async fn start_caddy(
     app_handle: tauri::AppHandle,
 ) -> Result<CaddyStatus, String> {
     let config = config::load_config(&app_handle);
+    let env_vars = resolve_env_vars(&config);
 
     if let Err(e) = docker::ensure_network(&state.docker).await {
         return Ok(CaddyStatus {
@@ -34,7 +58,7 @@ pub async fn start_caddy(
         });
     }
 
-    if let Err(e) = docker::ensure_caddy(&state.docker, &config.caddy_image).await {
+    if let Err(e) = docker::ensure_caddy(&state.docker, &config.caddy_image, &env_vars).await {
         return Ok(CaddyStatus {
             running: false,
             api_reachable: false,
@@ -54,13 +78,7 @@ pub async fn start_caddy(
     if api_ready {
         let auto = state.auto_gateways.lock().await;
         let combined = watcher::combine_routes(&config.static_routes, &auto);
-        let _ = caddy::push_routes_with_tls(
-            &state.http_client,
-            &combined,
-            &config.domain,
-            &config.dns_provider,
-        )
-        .await;
+        let _ = caddy::push_routes(&state.http_client, &combined, &config.domain).await;
     }
 
     Ok(CaddyStatus {
@@ -121,13 +139,7 @@ pub async fn add_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes_with_tls(
-        &state.http_client,
-        &combined,
-        &app_config.domain,
-        &app_config.dns_provider,
-    )
-    .await;
+    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -147,13 +159,7 @@ pub async fn remove_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes_with_tls(
-        &state.http_client,
-        &combined,
-        &app_config.domain,
-        &app_config.dns_provider,
-    )
-    .await;
+    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain).await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -177,78 +183,98 @@ pub async fn save_settings(
     Ok(app_config)
 }
 
+/// Get the list of env var keys and whether each has a stored value.
 #[tauri::command]
-pub async fn get_dns_config(app_handle: tauri::AppHandle) -> Result<DnsConfig, String> {
+pub async fn get_env_vars(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<(String, bool)>, String> {
     let config = config::load_config(&app_handle);
-    Ok(DnsConfig {
-        provider: config.dns_provider.clone(),
-        has_credentials: credentials::has_credentials(&config.dns_provider),
-    })
+    let result = config
+        .caddy_env_vars
+        .iter()
+        .map(|entry| (entry.key.clone(), credentials::has_value(&entry.key)))
+        .collect();
+    Ok(result)
 }
 
+/// Save an env var: stores the key in config and the value in keyring.
+/// If value is empty, removes the credential but keeps the key.
 #[tauri::command]
-pub async fn save_dns_config(
-    state: State<'_, AppState>,
+pub async fn save_env_var(
     app_handle: tauri::AppHandle,
-    provider: DnsProvider,
-    api_token: Option<String>,
-    api_key: Option<String>,
-    api_secret: Option<String>,
-) -> Result<DnsConfig, String> {
+    key: String,
+    value: String,
+) -> Result<Vec<(String, bool)>, String> {
     let mut app_config = config::load_config(&app_handle);
 
-    // If provider changed, clear old credentials
-    if app_config.dns_provider != provider {
-        credentials::delete_credentials(&app_config.dns_provider);
+    // Add key to config if not already present
+    if !app_config.caddy_env_vars.iter().any(|e| e.key == key) {
+        app_config.caddy_env_vars.push(EnvVarEntry { key: key.clone() });
+        config::save_config(&app_handle, &app_config)?;
     }
 
-    // Store new credentials
-    match &provider {
-        DnsProvider::Cloudflare => {
-            let token = api_token.ok_or("Cloudflare API token is required")?;
-            if !token.is_empty() {
-                credentials::store_cloudflare_token(&token)?;
-            }
-        }
-        DnsProvider::Porkbun => {
-            let key = api_key.ok_or("Porkbun API key is required")?;
-            let secret = api_secret.ok_or("Porkbun API secret is required")?;
-            if !key.is_empty() && !secret.is_empty() {
-                credentials::store_porkbun_keys(&key, &secret)?;
-            }
-        }
-        DnsProvider::None => {
-            credentials::delete_credentials(&app_config.dns_provider);
+    // Store value in keyring/file
+    if !value.is_empty() {
+        eprintln!("[save_env_var] storing value for key='{key}', value_len={}", value.len());
+        credentials::store_value(&key, &value)?;
+    } else {
+        eprintln!("[save_env_var] value is empty for key='{key}', skipping store");
+    }
+
+    // Verify it was stored
+    let stored = credentials::has_value(&key);
+    eprintln!("[save_env_var] has_value('{key}') = {stored}");
+    if stored {
+        if let Ok(v) = credentials::get_value(&key) {
+            eprintln!("[save_env_var] get_value('{key}') = '{}...' (len={})", &v[..v.len().min(4)], v.len());
         }
     }
 
-    app_config.dns_provider = provider.clone();
+    // Return updated list
+    let result = app_config
+        .caddy_env_vars
+        .iter()
+        .map(|entry| {
+            let has = credentials::has_value(&entry.key);
+            eprintln!("[save_env_var] returning key='{}', has_value={}", entry.key, has);
+            (entry.key.clone(), has)
+        })
+        .collect();
+    Ok(result)
+}
+
+/// Remove an env var: removes from config and keyring.
+#[tauri::command]
+pub async fn remove_env_var(
+    app_handle: tauri::AppHandle,
+    key: String,
+) -> Result<Vec<(String, bool)>, String> {
+    let mut app_config = config::load_config(&app_handle);
+    app_config.caddy_env_vars.retain(|e| e.key != key);
     config::save_config(&app_handle, &app_config)?;
+    credentials::delete_value(&key);
 
-    // Re-push routes with updated TLS config
-    let auto = state.auto_gateways.lock().await;
-    let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes_with_tls(
-        &state.http_client,
-        &combined,
-        &app_config.domain,
-        &provider,
-    )
-    .await;
-
-    Ok(DnsConfig {
-        provider,
-        has_credentials: credentials::has_credentials(&app_config.dns_provider),
-    })
+    let result = app_config
+        .caddy_env_vars
+        .iter()
+        .map(|entry| (entry.key.clone(), credentials::has_value(&entry.key)))
+        .collect();
+    Ok(result)
 }
 
 #[tauri::command]
 pub async fn get_cert_info(
-    state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<CertInfo, String> {
     let config = config::load_config(&app_handle);
-    Ok(caddy::get_cert_info(&state.http_client, &config.domain, &config.dns_provider).await)
+    let has_env_vars = !config.caddy_env_vars.is_empty();
+    Ok(caddy::get_cert_info(&config.domain, has_env_vars))
+}
+
+#[tauri::command]
+pub async fn get_event_log(state: State<'_, AppState>) -> Result<Vec<LogEntry>, String> {
+    let log = state.event_log.lock().await;
+    Ok(log.clone())
 }
 
 #[tauri::command]

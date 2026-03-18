@@ -1,8 +1,7 @@
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::credentials;
-use crate::models::{CertInfo, DnsProvider, Gateway};
+use crate::models::{CertInfo, Gateway};
 
 const CADDY_ADMIN_URL: &str = "http://localhost:2019";
 
@@ -14,48 +13,7 @@ pub async fn check_health(client: &Client) -> bool {
         .is_ok()
 }
 
-fn build_tls_automation(domain: &str, provider: &DnsProvider) -> Option<Value> {
-    if *provider == DnsProvider::None || domain.is_empty() {
-        return None;
-    }
-
-    let dns_provider = match provider {
-        DnsProvider::Cloudflare => {
-            let token = credentials::get_cloudflare_token().ok()?;
-            json!({
-                "name": "cloudflare",
-                "api_token": token
-            })
-        }
-        DnsProvider::Porkbun => {
-            let (key, secret) = credentials::get_porkbun_keys().ok()?;
-            json!({
-                "name": "porkbun",
-                "api_key": key,
-                "api_secret_key": secret
-            })
-        }
-        DnsProvider::None => return None,
-    };
-
-    Some(json!({
-        "automation": {
-            "policies": [{
-                "subjects": [format!("*.{domain}")],
-                "issuers": [{
-                    "module": "acme",
-                    "challenges": {
-                        "dns": {
-                            "provider": dns_provider
-                        }
-                    }
-                }]
-            }]
-        }
-    }))
-}
-
-fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvider) -> Value {
+fn build_caddy_config(routes: &[Gateway], domain: &str) -> Value {
     let caddy_routes: Vec<Value> = routes
         .iter()
         .map(|gw| {
@@ -74,34 +32,26 @@ fn build_caddy_config(routes: &[Gateway], domain: &str, dns_provider: &DnsProvid
         })
         .collect();
 
-    let mut apps = json!({
-        "http": {
-            "servers": {
-                "srv0": {
-                    "listen": [":443", ":80"],
-                    "routes": caddy_routes
+    json!({
+        "apps": {
+            "http": {
+                "servers": {
+                    "srv0": {
+                        "listen": [":443", ":80"],
+                        "routes": caddy_routes
+                    }
                 }
             }
         }
-    });
-
-    // Add TLS automation if DNS provider is configured
-    if let Some(tls_config) = build_tls_automation(domain, dns_provider) {
-        apps.as_object_mut()
-            .unwrap()
-            .insert("tls".to_string(), tls_config);
-    }
-
-    json!({ "apps": apps })
+    })
 }
 
-pub async fn push_routes_with_tls(
+pub async fn push_routes(
     client: &Client,
     routes: &[Gateway],
     domain: &str,
-    dns_provider: &DnsProvider,
 ) -> Result<(), String> {
-    let config = build_caddy_config(routes, domain, dns_provider);
+    let config = build_caddy_config(routes, domain);
 
     let resp = client
         .post(format!("{CADDY_ADMIN_URL}/load"))
@@ -118,49 +68,27 @@ pub async fn push_routes_with_tls(
     Ok(())
 }
 
-/// Get certificate information by checking the Caddy TLS config
-/// and attempting to read cert expiry via openssl.
-pub async fn get_cert_info(client: &Client, domain: &str, provider: &DnsProvider) -> CertInfo {
-    if *provider == DnsProvider::None || domain.is_empty() {
+/// Check certificate status by probing localhost:443 with openssl.
+pub fn get_cert_info(domain: &str, has_env_vars: bool) -> CertInfo {
+    if domain.is_empty() {
         return CertInfo {
-            configured: false,
+            has_env_vars,
             domain: None,
             expiry: None,
             error: None,
         };
     }
 
-    // Check if TLS is configured in Caddy
-    let tls_configured = match client
-        .get(format!("{CADDY_ADMIN_URL}/config/apps/tls/"))
-        .send()
-        .await
-    {
-        Ok(resp) => resp.status().is_success(),
-        Err(_) => false,
-    };
-
-    if !tls_configured {
-        return CertInfo {
-            configured: false,
-            domain: Some(format!("*.{domain}")),
-            expiry: None,
-            error: Some("TLS automation not yet pushed to Caddy".to_string()),
-        };
-    }
-
-    // Try to get cert expiry via openssl
     let expiry = get_cert_expiry_openssl(domain);
 
     CertInfo {
-        configured: true,
+        has_env_vars,
         domain: Some(format!("*.{domain}")),
         expiry,
         error: None,
     }
 }
 
-/// Use openssl to check certificate expiration on localhost:443.
 fn get_cert_expiry_openssl(domain: &str) -> Option<String> {
     use std::process::Command;
 
@@ -177,7 +105,6 @@ fn get_cert_expiry_openssl(domain: &str) -> Option<String> {
         .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Output is like: notAfter=Mar 17 00:00:00 2026 GMT
     stdout
         .trim()
         .strip_prefix("notAfter=")

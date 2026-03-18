@@ -20,11 +20,20 @@ pub fn connect() -> Result<Docker, String> {
     Docker::connect_with_local_defaults().map_err(|e| format!("Docker connection failed: {e}"))
 }
 
+fn docker_err(context: &str, e: bollard::errors::Error) -> String {
+    let msg = e.to_string();
+    if msg.contains("client error (Connect)") || msg.contains("No such file or directory") || msg.contains("connection refused") {
+        "Docker does not appear to be running. Please start Docker Desktop and try again.".to_string()
+    } else {
+        format!("{context}: {e}")
+    }
+}
+
 pub async fn ensure_network(docker: &Docker) -> Result<(), String> {
     let networks = docker
         .list_networks::<String>(None)
         .await
-        .map_err(|e| format!("Failed to list networks: {e}"))?;
+        .map_err(|e| docker_err("Failed to list networks", e))?;
 
     let exists = networks
         .iter()
@@ -38,13 +47,17 @@ pub async fn ensure_network(docker: &Docker) -> Result<(), String> {
                 ..Default::default()
             })
             .await
-            .map_err(|e| format!("Failed to create network: {e}"))?;
+            .map_err(|e| docker_err("Failed to create network", e))?;
     }
 
     Ok(())
 }
 
-pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
+pub async fn ensure_caddy(
+    docker: &Docker,
+    image: &str,
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
     let filters: HashMap<String, Vec<String>> = HashMap::from([(
         "name".to_string(),
         vec![CADDY_CONTAINER_NAME.to_string()],
@@ -56,17 +69,25 @@ pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
             ..Default::default()
         }))
         .await
-        .map_err(|e| format!("Failed to list containers: {e}"))?;
+        .map_err(|e| docker_err("Failed to list containers", e))?;
 
     if let Some(container) = containers.first() {
-        let state = container.state.as_deref().unwrap_or("");
-        if state != "running" {
-            docker
-                .start_container(CADDY_CONTAINER_NAME, None::<StartContainerOptions<String>>)
-                .await
-                .map_err(|e| format!("Failed to start Caddy: {e}"))?;
+        let needs_recreate = check_needs_recreate(docker, image, env_vars).await;
+
+        if needs_recreate {
+            let _ = docker.stop_container(CADDY_CONTAINER_NAME, None).await;
+            let _ = docker.remove_container(CADDY_CONTAINER_NAME, None).await;
+            // Fall through to create a new container
+        } else {
+            let state = container.state.as_deref().unwrap_or("");
+            if state != "running" {
+                docker
+                    .start_container(CADDY_CONTAINER_NAME, None::<StartContainerOptions<String>>)
+                    .await
+                    .map_err(|e| docker_err("Failed to start Caddy", e))?;
+            }
+            return Ok(());
         }
-        return Ok(());
     }
 
     // Pull the image
@@ -79,7 +100,14 @@ pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
         None,
     );
     while let Some(result) = pull_stream.next().await {
-        result.map_err(|e| format!("Failed to pull image: {e}"))?;
+        result.map_err(|e| docker_err("Failed to pull image", e))?;
+    }
+
+    // Build env var list for the container.
+    // Always set CADDY_ADMIN to bind on all interfaces so the host can reach it.
+    let mut env: Vec<String> = vec!["CADDY_ADMIN=0.0.0.0:2019".to_string()];
+    for (k, v) in env_vars {
+        env.push(format!("{k}={v}"));
     }
 
     // Create and start the container
@@ -113,6 +141,7 @@ pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
 
     let config = Config {
         image: Some(image.to_string()),
+        env: Some(env),
         exposed_ports: Some(exposed_ports),
         host_config: Some(HostConfig {
             network_mode: Some(NETWORK_NAME.to_string()),
@@ -149,14 +178,63 @@ pub async fn ensure_caddy(docker: &Docker, image: &str) -> Result<(), String> {
             config,
         )
         .await
-        .map_err(|e| format!("Failed to create Caddy container: {e}"))?;
+        .map_err(|e| docker_err("Failed to create Caddy container", e))?;
 
     docker
         .start_container(CADDY_CONTAINER_NAME, None::<StartContainerOptions<String>>)
         .await
-        .map_err(|e| format!("Failed to start Caddy: {e}"))?;
+        .map_err(|e| docker_err("Failed to start Caddy", e))?;
 
     Ok(())
+}
+
+/// Check if the existing Caddy container needs to be recreated
+/// (image or env vars changed).
+async fn check_needs_recreate(
+    docker: &Docker,
+    expected_image: &str,
+    expected_env: &[(String, String)],
+) -> bool {
+    let info = match docker
+        .inspect_container(CADDY_CONTAINER_NAME, None::<InspectContainerOptions>)
+        .await
+    {
+        Ok(info) => info,
+        Err(_) => return true,
+    };
+
+    // Check image
+    let current_image = info
+        .config
+        .as_ref()
+        .and_then(|c| c.image.as_deref())
+        .unwrap_or("");
+    if current_image != expected_image {
+        return true;
+    }
+
+    // Check env vars — extract current env as key=value pairs
+    let current_env: Vec<&str> = info
+        .config
+        .as_ref()
+        .and_then(|c| c.env.as_ref())
+        .map(|e| e.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+
+    // Check CADDY_ADMIN is set
+    if !current_env.contains(&"CADDY_ADMIN=0.0.0.0:2019") {
+        return true;
+    }
+
+    // Check that all expected env vars are present with correct values
+    for (k, v) in expected_env {
+        let expected = format!("{k}={v}");
+        if !current_env.contains(&expected.as_str()) {
+            return true;
+        }
+    }
+
+    false
 }
 
 pub async fn is_caddy_running(docker: &Docker) -> bool {
@@ -187,7 +265,6 @@ pub struct ContainerInfo {
     pub on_network: bool,
 }
 
-/// Inspect a container and extract routing-relevant information.
 pub async fn inspect_for_routing(
     docker: &Docker,
     container_id: &str,
@@ -195,7 +272,7 @@ pub async fn inspect_for_routing(
     let info = docker
         .inspect_container(container_id, None::<InspectContainerOptions>)
         .await
-        .map_err(|e| format!("Failed to inspect container: {e}"))?;
+        .map_err(|e| docker_err("Failed to inspect container", e))?;
 
     let name = info
         .name
@@ -207,14 +284,12 @@ pub async fn inspect_for_routing(
     let labels = config.labels.unwrap_or_default();
     let image = config.image.unwrap_or_default();
 
-    // Extract exposed ports from container config
     let exposed_ports = config.exposed_ports.unwrap_or_default();
     let ports: Vec<u16> = exposed_ports
         .keys()
         .filter_map(|k| k.split('/').next()?.parse().ok())
         .collect();
 
-    // Check if already on our network
     let on_network = info
         .network_settings
         .as_ref()
@@ -232,7 +307,6 @@ pub async fn inspect_for_routing(
     })
 }
 
-/// Attach a container to the pulse-gateway network.
 pub async fn attach_to_network(docker: &Docker, container_id: &str) -> Result<(), String> {
     docker
         .connect_network(
@@ -243,11 +317,10 @@ pub async fn attach_to_network(docker: &Docker, container_id: &str) -> Result<()
             },
         )
         .await
-        .map_err(|e| format!("Failed to attach container to network: {e}"))?;
+        .map_err(|e| docker_err("Failed to attach container to network", e))?;
     Ok(())
 }
 
-/// List all currently running containers (excluding stopped).
 pub async fn list_running_containers(docker: &Docker) -> Result<Vec<String>, String> {
     let containers = docker
         .list_containers(Some(ListContainersOptions::<String> {
@@ -255,10 +328,7 @@ pub async fn list_running_containers(docker: &Docker) -> Result<Vec<String>, Str
             ..Default::default()
         }))
         .await
-        .map_err(|e| format!("Failed to list containers: {e}"))?;
+        .map_err(|e| docker_err("Failed to list containers", e))?;
 
-    Ok(containers
-        .into_iter()
-        .filter_map(|c| c.id)
-        .collect())
+    Ok(containers.into_iter().filter_map(|c| c.id).collect())
 }

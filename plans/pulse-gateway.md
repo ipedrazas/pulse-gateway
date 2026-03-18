@@ -109,9 +109,9 @@ The full dashboard experience: an "Active Gateways" list showing each proxied co
 
 ### Acceptance criteria
 
-- [ ] Active Gateways list displays subdomain, target container, port, and status for each route
-- [ ] Status indicators distinguish between Secure (HTTPS working), Proxying (HTTP only), and Error states
-- [ ] Live event log shows timestamped entries for container detection, route changes, and errors
-- [ ] Clicking a gateway's subdomain opens it in the default browser
-- [ ] Dashboard correctly reflects state after app restart (re-scans running containers)
-- [ ] Zero-config routing: start a container → HTTPS subdomain available within 2 seconds
+- [x] Active Gateways list displays subdomain, target container, port, and status for each route
+- [x] Status indicators distinguish between Secure (HTTPS working), Proxying (HTTP only), and Error states
+- [x] Live event log shows timestamped entries for container detection, route changes, and errors
+- [x] Clicking a gateway's subdomain opens it in the default browser
+- [x] Dashboard correctly reflects state after app restart (re-scans running containers)
+- [x] Zero-config routing: start a container → HTTPS subdomain available within 2 seconds

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGatewayStore } from "../stores/gateway";
 import { useSettingsStore } from "../stores/settings";
 
@@ -10,19 +11,67 @@ const newSubdomain = ref("");
 const newTargetHost = ref("");
 const newPort = ref<number | undefined>();
 const error = ref("");
-
-const autoGateways = computed(() =>
-  gateway.allGateways.filter((g) => g.source === "auto")
-);
+const logContainer = ref<HTMLElement | null>(null);
 
 const staticGateways = computed(() =>
   gateway.allGateways.filter((g) => g.source === "static")
 );
 
+const hasTls = computed(() => settings.envVars.length > 0);
+
 onMounted(async () => {
   await settings.fetchSettings();
+  await settings.fetchEnvVars();
   await gateway.init();
 });
+
+// Auto-scroll log to bottom
+watch(
+  () => gateway.eventLog.length,
+  async () => {
+    await nextTick();
+    if (logContainer.value) {
+      logContainer.value.scrollTop = logContainer.value.scrollHeight;
+    }
+  }
+);
+
+function gatewayStatus(gw: { source: string }): "secure" | "proxying" | "error" {
+  if (gw.source === "static") {
+    return hasTls.value ? "secure" : "proxying";
+  }
+  return hasTls.value ? "secure" : "proxying";
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case "secure":
+      return "Secure";
+    case "proxying":
+      return "Proxying";
+    case "error":
+      return "Error";
+    default:
+      return status;
+  }
+}
+
+function fqdn(subdomain: string): string {
+  return settings.domain ? `${subdomain}.${settings.domain}` : subdomain;
+}
+
+function gatewayUrl(subdomain: string): string {
+  const proto = hasTls.value ? "https" : "http";
+  return `${proto}://${fqdn(subdomain)}`;
+}
+
+async function openGateway(subdomain: string) {
+  try {
+    await openUrl(gatewayUrl(subdomain));
+  } catch (e) {
+    console.error("Failed to open URL:", e);
+  }
+}
 
 async function handleStartCaddy() {
   await gateway.startCaddy();
@@ -35,7 +84,11 @@ async function handleAddRoute() {
     return;
   }
   try {
-    await gateway.addRoute(newSubdomain.value, newTargetHost.value, newPort.value);
+    await gateway.addRoute(
+      newSubdomain.value,
+      newTargetHost.value,
+      newPort.value
+    );
     newSubdomain.value = "";
     newTargetHost.value = "";
     newPort.value = undefined;
@@ -51,27 +104,36 @@ async function handleRemoveRoute(subdomain: string) {
     error.value = String(e);
   }
 }
-
-function fqdn(subdomain: string): string {
-  return settings.domain ? `${subdomain}.${settings.domain}` : subdomain;
-}
 </script>
 
 <template>
   <div class="dashboard">
-    <section class="status-section">
+    <!-- Caddy Status -->
+    <section class="section">
       <h2>Caddy Status</h2>
       <div class="status-card">
         <div class="status-row">
           <span>Container:</span>
-          <span :class="['badge', gateway.caddyStatus.running ? 'badge-ok' : 'badge-err']">
+          <span
+            :class="[
+              'badge',
+              gateway.caddyStatus.running ? 'badge-ok' : 'badge-err',
+            ]"
+          >
             {{ gateway.caddyStatus.running ? "Running" : "Stopped" }}
           </span>
         </div>
         <div class="status-row">
           <span>Admin API:</span>
-          <span :class="['badge', gateway.caddyStatus.api_reachable ? 'badge-ok' : 'badge-err']">
-            {{ gateway.caddyStatus.api_reachable ? "Reachable" : "Unreachable" }}
+          <span
+            :class="[
+              'badge',
+              gateway.caddyStatus.api_reachable ? 'badge-ok' : 'badge-err',
+            ]"
+          >
+            {{
+              gateway.caddyStatus.api_reachable ? "Reachable" : "Unreachable"
+            }}
           </span>
         </div>
         <div v-if="gateway.caddyStatus.error" class="status-error">
@@ -87,41 +149,78 @@ function fqdn(subdomain: string): string {
       </div>
     </section>
 
-    <!-- Auto-discovered gateways -->
-    <section class="routes-section">
-      <h2>Auto-Discovered Gateways</h2>
+    <!-- Active Gateways -->
+    <section class="section">
+      <h2>Active Gateways</h2>
       <div v-if="!settings.domain" class="domain-warning">
-        No domain configured. <router-link to="/settings">Set one in Settings</router-link>.
+        No domain configured.
+        <router-link to="/settings">Set one in Settings</router-link>.
       </div>
-      <table v-if="autoGateways.length > 0" class="routes-table">
+
+      <table
+        v-if="gateway.allGateways.length > 0"
+        class="routes-table"
+      >
         <thead>
           <tr>
             <th>Subdomain</th>
-            <th>Container</th>
+            <th>Target</th>
             <th>Port</th>
             <th>Source</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="gw in autoGateways" :key="gw.subdomain">
-            <td>{{ fqdn(gw.subdomain) }}</td>
+          <tr v-for="gw in gateway.allGateways" :key="gw.subdomain">
+            <td>
+              <a
+                class="subdomain-link"
+                href="#"
+                @click.prevent="openGateway(gw.subdomain)"
+                :title="gatewayUrl(gw.subdomain)"
+              >
+                {{ fqdn(gw.subdomain) }}
+              </a>
+            </td>
             <td>{{ gw.container_name || gw.target_host }}</td>
             <td>{{ gw.port }}</td>
-            <td><span class="badge badge-auto">Auto</span></td>
+            <td>
+              <span
+                :class="[
+                  'badge',
+                  gw.source === 'auto' ? 'badge-auto' : 'badge-static',
+                ]"
+              >
+                {{ gw.source === "auto" ? "Auto" : "Static" }}
+              </span>
+            </td>
+            <td>
+              <span
+                :class="[
+                  'badge',
+                  `badge-${gatewayStatus(gw)}`,
+                ]"
+              >
+                {{ statusLabel(gatewayStatus(gw)) }}
+              </span>
+            </td>
           </tr>
         </tbody>
       </table>
       <p v-else class="empty-state">
-        No containers detected. Start a Docker container to see it here.
+        No active gateways. Start a Docker container or add a static route.
       </p>
     </section>
 
-    <!-- Static routes -->
-    <section class="routes-section">
+    <!-- Static Routes -->
+    <section class="section">
       <h2>Static Routes</h2>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
         <input v-model="newSubdomain" placeholder="subdomain" />
-        <input v-model="newTargetHost" placeholder="target host (e.g. localhost)" />
+        <input
+          v-model="newTargetHost"
+          placeholder="target host (e.g. localhost)"
+        />
         <input v-model.number="newPort" type="number" placeholder="port" />
         <button type="submit">Add Route</button>
       </form>
@@ -142,7 +241,10 @@ function fqdn(subdomain: string): string {
             <td>{{ route.target_host }}</td>
             <td>{{ route.port }}</td>
             <td>
-              <button class="btn-remove" @click="handleRemoveRoute(route.subdomain)">
+              <button
+                class="btn-remove"
+                @click="handleRemoveRoute(route.subdomain)"
+              >
                 Remove
               </button>
             </td>
@@ -150,6 +252,24 @@ function fqdn(subdomain: string): string {
         </tbody>
       </table>
       <p v-else class="empty-state">No static routes configured.</p>
+    </section>
+
+    <!-- Event Log -->
+    <section class="section">
+      <h2>Event Log</h2>
+      <div ref="logContainer" class="log-container">
+        <div
+          v-for="(entry, i) in gateway.eventLog"
+          :key="i"
+          :class="['log-entry', `log-${entry.level}`]"
+        >
+          <span class="log-time">{{ entry.timestamp }}</span>
+          <span class="log-msg">{{ entry.message }}</span>
+        </div>
+        <div v-if="gateway.eventLog.length === 0" class="empty-state">
+          No events yet.
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -159,8 +279,7 @@ function fqdn(subdomain: string): string {
   padding: 1rem;
 }
 
-.status-section,
-.routes-section {
+.section {
   margin-bottom: 2rem;
 }
 
@@ -183,21 +302,36 @@ function fqdn(subdomain: string): string {
   border-radius: 4px;
   font-size: 0.85rem;
   font-weight: 600;
+  display: inline-block;
 }
 
 .badge-ok {
   background: #d4edda;
   color: #155724;
 }
-
 .badge-err {
   background: #f8d7da;
   color: #721c24;
 }
-
 .badge-auto {
   background: #cce5ff;
   color: #004085;
+}
+.badge-static {
+  background: #e2e3e5;
+  color: #383d41;
+}
+.badge-secure {
+  background: #d4edda;
+  color: #155724;
+}
+.badge-proxying {
+  background: #fff3cd;
+  color: #856404;
+}
+.badge-error {
+  background: #f8d7da;
+  color: #721c24;
 }
 
 .status-error {
@@ -214,12 +348,21 @@ function fqdn(subdomain: string): string {
   color: #856404;
 }
 
+.subdomain-link {
+  color: #396cd8;
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+.subdomain-link:hover {
+  text-decoration: underline;
+}
+
 .add-route-form {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
-
 .add-route-form input {
   flex: 1;
 }
@@ -234,7 +377,6 @@ function fqdn(subdomain: string): string {
   width: 100%;
   border-collapse: collapse;
 }
-
 .routes-table th,
 .routes-table td {
   text-align: left;
@@ -251,7 +393,6 @@ function fqdn(subdomain: string): string {
   cursor: pointer;
   font-size: 0.85rem;
 }
-
 .btn-remove:hover {
   background: #c82333;
 }
@@ -262,34 +403,91 @@ function fqdn(subdomain: string): string {
   padding: 2rem;
 }
 
+/* Event Log */
+.log-container {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.log-entry {
+  padding: 0.15rem 0;
+}
+
+.log-time {
+  color: #888;
+  margin-right: 0.75rem;
+}
+
+.log-info .log-msg {
+  color: #b8d4e3;
+}
+.log-warn .log-msg {
+  color: #e0c870;
+}
+.log-error .log-msg {
+  color: #e88;
+}
+
 @media (prefers-color-scheme: dark) {
   .status-card {
     background: #1a1a1a;
   }
-
-  .badge-ok {
+  .badge-ok,
+  .badge-secure {
     background: #1e3a2f;
     color: #75d99a;
   }
-
-  .badge-err {
+  .badge-err,
+  .badge-error {
     background: #3a1e1e;
     color: #e88;
   }
-
   .badge-auto {
     background: #1e2a3a;
     color: #7ab8e8;
   }
-
+  .badge-static {
+    background: #2a2a2a;
+    color: #aaa;
+  }
+  .badge-proxying {
+    background: #3a3420;
+    color: #e0c870;
+  }
   .domain-warning {
     background: #3a3420;
     color: #e0c870;
   }
-
   .routes-table th,
   .routes-table td {
     border-bottom-color: #333;
+  }
+  .subdomain-link {
+    color: #7ab8e8;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  .log-container {
+    background: #f0f0f0;
+  }
+  .log-time {
+    color: #666;
+  }
+  .log-info .log-msg {
+    color: #2a5a7a;
+  }
+  .log-warn .log-msg {
+    color: #8a6d00;
+  }
+  .log-error .log-msg {
+    color: #a03030;
   }
 }
 </style>
