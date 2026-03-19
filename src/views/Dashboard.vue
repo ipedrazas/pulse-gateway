@@ -14,7 +14,7 @@ const error = ref("");
 const logContainer = ref<HTMLElement | null>(null);
 
 const staticGateways = computed(() =>
-  gateway.allGateways.filter((g) => g.source === "static")
+  gateway.allGateways.filter((g) => g.source === "static"),
 );
 
 const hasTls = computed(() => settings.envVars.length > 0);
@@ -34,7 +34,7 @@ watch(
     if (newLen > 0 && newLen !== oldLen) {
       await settings.fetchCertInfo();
     }
-  }
+  },
 );
 
 // Auto-scroll log to bottom
@@ -45,7 +45,7 @@ watch(
     if (logContainer.value) {
       logContainer.value.scrollTop = logContainer.value.scrollHeight;
     }
-  }
+  },
 );
 
 function gatewayStatus(): "ssl" | "proxy" {
@@ -100,7 +100,7 @@ async function handleAddRoute() {
     await gateway.addRoute(
       newSubdomain.value,
       newTargetHost.value,
-      newPort.value
+      newPort.value,
     );
     newSubdomain.value = "";
     newTargetHost.value = "";
@@ -180,10 +180,7 @@ async function handleRemoveRoute(subdomain: string) {
         <router-link to="/settings">Set one in Settings</router-link>.
       </div>
 
-      <table
-        v-if="gateway.allGateways.length > 0"
-        class="routes-table"
-      >
+      <table v-if="gateway.allGateways.length > 0" class="routes-table">
         <thead>
           <tr>
             <th>Subdomain</th>
@@ -218,12 +215,7 @@ async function handleRemoveRoute(subdomain: string) {
               </span>
             </td>
             <td>
-              <span
-                :class="[
-                  'badge',
-                  `badge-${gatewayStatus()}`,
-                ]"
-              >
+              <span :class="['badge', `badge-${gatewayStatus()}`]">
                 {{ statusLabel(gatewayStatus()) }}
               </span>
             </td>
@@ -239,8 +231,9 @@ async function handleRemoveRoute(subdomain: string) {
     <section class="section">
       <h2>Static Routes</h2>
       <p class="section-desc">
-        Route any service — Docker containers or apps running on your Mac.
-        Use <code>localhost</code> for host apps (automatically translated for Docker networking).
+        Route any service — Docker containers or apps running on your Mac. Use
+        <code>localhost</code> for host apps (automatically translated for
+        Docker networking).
       </p>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
         <input v-model="newSubdomain" placeholder="subdomain" />

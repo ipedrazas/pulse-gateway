@@ -187,7 +187,9 @@ pub async fn get_cert_info(domain: &str, has_env_vars: bool, routes: &[Gateway])
         not_before: None,
         not_after: None,
         subject_alt_names: None,
-        error: Some("No valid certificates found yet. Certs may still be provisioning.".to_string()),
+        error: Some(
+            "No valid certificates found yet. Certs may still be provisioning.".to_string(),
+        ),
     }
 }
 

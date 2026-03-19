@@ -4,7 +4,9 @@ use crate::caddy;
 use crate::config;
 use crate::credentials;
 use crate::docker;
-use crate::models::{AppConfig, CaddyStatus, CertInfo, DnsProvider, EnvVarEntry, Gateway, LogEntry, StaticRouteRule};
+use crate::models::{
+    AppConfig, CaddyStatus, CertInfo, DnsProvider, EnvVarEntry, Gateway, LogEntry, StaticRouteRule,
+};
 use crate::watcher;
 use crate::AppState;
 
@@ -68,7 +70,13 @@ pub async fn start_caddy(
     if api_ready {
         let auto = state.auto_gateways.lock().await;
         let combined = watcher::combine_routes(&config.static_routes, &auto);
-        let _ = caddy::push_routes(&state.http_client, &combined, &config.domain, &config.dns_provider).await;
+        let _ = caddy::push_routes(
+            &state.http_client,
+            &combined,
+            &config.domain,
+            &config.dns_provider,
+        )
+        .await;
     }
 
     Ok(CaddyStatus {
@@ -83,9 +91,7 @@ pub async fn start_caddy(
 }
 
 #[tauri::command]
-pub async fn stop_caddy(
-    state: State<'_, AppState>,
-) -> Result<CaddyStatus, String> {
+pub async fn stop_caddy(state: State<'_, AppState>) -> Result<CaddyStatus, String> {
     if let Err(e) = docker::stop_caddy(&state.docker).await {
         return Ok(CaddyStatus {
             running: true,
@@ -148,7 +154,13 @@ pub async fn add_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+    let _ = caddy::push_routes(
+        &state.http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -168,7 +180,13 @@ pub async fn remove_route(
 
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&app_config.static_routes, &auto);
-    let _ = caddy::push_routes(&state.http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+    let _ = caddy::push_routes(
+        &state.http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     let _ = app_handle.emit("gateways-changed", &combined);
     Ok(app_config.static_routes)
@@ -196,9 +214,7 @@ pub async fn save_settings(
 
 /// Get the list of env var keys and whether each has a stored value.
 #[tauri::command]
-pub async fn get_env_vars(
-    app_handle: tauri::AppHandle,
-) -> Result<Vec<(String, bool)>, String> {
+pub async fn get_env_vars(app_handle: tauri::AppHandle) -> Result<Vec<(String, bool)>, String> {
     let config = config::load_config(&app_handle);
     let result = config
         .caddy_env_vars
@@ -220,7 +236,9 @@ pub async fn save_env_var(
 
     // Add key to config if not already present
     if !app_config.caddy_env_vars.iter().any(|e| e.key == key) {
-        app_config.caddy_env_vars.push(EnvVarEntry { key: key.clone() });
+        app_config
+            .caddy_env_vars
+            .push(EnvVarEntry { key: key.clone() });
         config::save_config(&app_handle, &app_config)?;
     }
 

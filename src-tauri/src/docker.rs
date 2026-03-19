@@ -22,8 +22,12 @@ pub fn connect() -> Result<Docker, String> {
 
 fn docker_err(context: &str, e: bollard::errors::Error) -> String {
     let msg = e.to_string();
-    if msg.contains("client error (Connect)") || msg.contains("No such file or directory") || msg.contains("connection refused") {
-        "Docker does not appear to be running. Please start Docker Desktop and try again.".to_string()
+    if msg.contains("client error (Connect)")
+        || msg.contains("No such file or directory")
+        || msg.contains("connection refused")
+    {
+        "Docker does not appear to be running. Please start Docker Desktop and try again."
+            .to_string()
     } else {
         format!("{context}: {e}")
     }
@@ -58,10 +62,8 @@ pub async fn ensure_caddy(
     image: &str,
     env_vars: &[(String, String)],
 ) -> Result<(), String> {
-    let filters: HashMap<String, Vec<String>> = HashMap::from([(
-        "name".to_string(),
-        vec![CADDY_CONTAINER_NAME.to_string()],
-    )]);
+    let filters: HashMap<String, Vec<String>> =
+        HashMap::from([("name".to_string(), vec![CADDY_CONTAINER_NAME.to_string()])]);
     let containers = docker
         .list_containers(Some(ListContainersOptions {
             all: true,
@@ -246,10 +248,8 @@ pub async fn stop_caddy(docker: &Docker) -> Result<(), String> {
 }
 
 pub async fn is_caddy_running(docker: &Docker) -> bool {
-    let filters: HashMap<String, Vec<String>> = HashMap::from([(
-        "name".to_string(),
-        vec![CADDY_CONTAINER_NAME.to_string()],
-    )]);
+    let filters: HashMap<String, Vec<String>> =
+        HashMap::from([("name".to_string(), vec![CADDY_CONTAINER_NAME.to_string()])]);
     match docker
         .list_containers(Some(ListContainersOptions {
             all: false,

@@ -8,14 +8,12 @@ const SERVICE: &str = "dev.andcake.pulsegw";
 
 /// Try keyring first, fall back to file-based storage.
 /// macOS Keychain can be inaccessible in dev mode or sandboxed contexts.
-
 fn entry(key: &str) -> Result<Entry, String> {
     Entry::new(SERVICE, key).map_err(|e| format!("Keyring error: {e}"))
 }
 
 fn fallback_path() -> PathBuf {
-    let dir = dirs_next()
-        .unwrap_or_else(|| PathBuf::from("."));
+    let dir = dirs_next().unwrap_or_else(|| PathBuf::from("."));
     dir.join("env_secrets.json")
 }
 

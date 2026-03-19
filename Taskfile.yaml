@@ -78,3 +78,20 @@ tasks:
     desc: Preview production frontend build
     cmds:
       - bun run preview
+
+  fmt:backend:
+    desc: Format the code
+    dir: src-tauri
+    cmds:
+      - cargo fmt
+
+  fmt:frontend:
+    desc: Format the code
+    dir: src
+    cmds:
+      - npx prettier --write .
+  fmt:
+    desc: Format the code
+    cmds:
+      - task fmt:backend
+      - task fmt:frontend

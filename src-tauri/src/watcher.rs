@@ -22,17 +22,46 @@ pub async fn run(
     event_log: Arc<Mutex<Vec<LogEntry>>>,
     app_handle: AppHandle,
 ) {
-    log_event(&event_log, &app_handle, "info", "Pulse Gateway watcher started");
+    log_event(
+        &event_log,
+        &app_handle,
+        "info",
+        "Pulse Gateway watcher started",
+    );
 
-    if let Err(e) = reconcile(&docker, &http_client, &auto_gateways, &event_log, &app_handle).await {
-        log_event(&event_log, &app_handle, "error", &format!("Reconciliation failed: {e}"));
+    if let Err(e) = reconcile(
+        &docker,
+        &http_client,
+        &auto_gateways,
+        &event_log,
+        &app_handle,
+    )
+    .await
+    {
+        log_event(
+            &event_log,
+            &app_handle,
+            "error",
+            &format!("Reconciliation failed: {e}"),
+        );
     }
 
     loop {
-        if let Err(e) =
-            listen_events(&docker, &http_client, &auto_gateways, &event_log, &app_handle).await
+        if let Err(e) = listen_events(
+            &docker,
+            &http_client,
+            &auto_gateways,
+            &event_log,
+            &app_handle,
+        )
+        .await
         {
-            log_event(&event_log, &app_handle, "error", &format!("Event stream error: {e}, reconnecting..."));
+            log_event(
+                &event_log,
+                &app_handle,
+                "error",
+                &format!("Event stream error: {e}, reconnecting..."),
+            );
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     }
@@ -48,7 +77,12 @@ async fn reconcile(
     let container_ids = docker::list_running_containers(docker).await?;
     let app_config = config::load_config(app_handle);
 
-    log_event(event_log, app_handle, "info", &format!("Reconciling {} running containers", container_ids.len()));
+    log_event(
+        event_log,
+        app_handle,
+        "info",
+        &format!("Reconciling {} running containers", container_ids.len()),
+    );
 
     let mut gateways = auto_gateways.lock().await;
     gateways.clear();
@@ -63,15 +97,22 @@ async fn reconcile(
                 let _ = docker::attach_to_network(docker, &id).await;
             }
 
-            let new_routes =
-                build_auto_routes(&info, &app_config.route_rules, &gateways, &app_config.static_routes);
+            let new_routes = build_auto_routes(
+                &info,
+                &app_config.route_rules,
+                &gateways,
+                &app_config.static_routes,
+            );
 
             for route in &new_routes {
                 log_event(
                     event_log,
                     app_handle,
                     "info",
-                    &format!("Discovered container '{}' → {}.{}", info.name, route.subdomain, app_config.domain),
+                    &format!(
+                        "Discovered container '{}' → {}.{}",
+                        info.name, route.subdomain, app_config.domain
+                    ),
                 );
             }
 
@@ -80,13 +121,24 @@ async fn reconcile(
     }
 
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+    let _ = caddy::push_routes(
+        http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     log_event(
         event_log,
         app_handle,
         "info",
-        &format!("Reconciliation complete: {} total routes ({} auto, {} static)", combined.len(), gateways.len(), app_config.static_routes.len()),
+        &format!(
+            "Reconciliation complete: {} total routes ({} auto, {} static)",
+            combined.len(),
+            gateways.len(),
+            app_config.static_routes.len()
+        ),
     );
 
     emit_gateways(app_handle, &combined);
@@ -104,11 +156,7 @@ async fn listen_events(
         ("type".to_string(), vec!["container".to_string()]),
         (
             "event".to_string(),
-            vec![
-                "start".to_string(),
-                "stop".to_string(),
-                "die".to_string(),
-            ],
+            vec!["start".to_string(), "stop".to_string(), "die".to_string()],
         ),
     ]);
 
@@ -134,10 +182,26 @@ async fn listen_events(
 
         match action {
             "start" => {
-                handle_start(docker, http_client, auto_gateways, event_log, app_handle, container_id).await;
+                handle_start(
+                    docker,
+                    http_client,
+                    auto_gateways,
+                    event_log,
+                    app_handle,
+                    container_id,
+                )
+                .await;
             }
             "stop" | "die" => {
-                handle_stop(http_client, auto_gateways, event_log, app_handle, container_id, action).await;
+                handle_stop(
+                    http_client,
+                    auto_gateways,
+                    event_log,
+                    app_handle,
+                    container_id,
+                    action,
+                )
+                .await;
             }
             _ => {}
         }
@@ -157,19 +221,38 @@ async fn handle_start(
     let info = match docker::inspect_for_routing(docker, container_id).await {
         Ok(info) => info,
         Err(e) => {
-            log_event(event_log, app_handle, "error", &format!("Failed to inspect container {}: {e}", &container_id[..12.min(container_id.len())]));
+            log_event(
+                event_log,
+                app_handle,
+                "error",
+                &format!(
+                    "Failed to inspect container {}: {e}",
+                    &container_id[..12.min(container_id.len())]
+                ),
+            );
             return;
         }
     };
 
     // If Caddy just restarted, re-push all routes
     if info.name == CADDY_CONTAINER_NAME {
-        log_event(event_log, app_handle, "info", "Caddy container restarted, re-pushing routes");
+        log_event(
+            event_log,
+            app_handle,
+            "info",
+            "Caddy container restarted, re-pushing routes",
+        );
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         let app_config = config::load_config(app_handle);
         let gateways = auto_gateways.lock().await;
         let combined = combine_routes(&app_config.static_routes, &gateways);
-        let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+        let _ = caddy::push_routes(
+            http_client,
+            &combined,
+            &app_config.domain,
+            &app_config.dns_provider,
+        )
+        .await;
         return;
     }
 
@@ -177,22 +260,41 @@ async fn handle_start(
         return;
     }
 
-    log_event(event_log, app_handle, "info", &format!("Detected new container: '{}'", info.name));
+    log_event(
+        event_log,
+        app_handle,
+        "info",
+        &format!("Detected new container: '{}'", info.name),
+    );
 
     if !info.on_network {
         if let Err(e) = docker::attach_to_network(docker, container_id).await {
-            log_event(event_log, app_handle, "error", &format!("Failed to attach '{}' to network: {e}", info.name));
+            log_event(
+                event_log,
+                app_handle,
+                "error",
+                &format!("Failed to attach '{}' to network: {e}", info.name),
+            );
         }
     }
 
     let app_config = config::load_config(app_handle);
     let mut gateways = auto_gateways.lock().await;
 
-    let new_routes =
-        build_auto_routes(&info, &app_config.route_rules, &gateways, &app_config.static_routes);
+    let new_routes = build_auto_routes(
+        &info,
+        &app_config.route_rules,
+        &gateways,
+        &app_config.static_routes,
+    );
 
     if new_routes.is_empty() {
-        log_event(event_log, app_handle, "warn", &format!("Container '{}' has no exposed ports, skipping", info.name));
+        log_event(
+            event_log,
+            app_handle,
+            "warn",
+            &format!("Container '{}' has no exposed ports, skipping", info.name),
+        );
         return;
     }
 
@@ -201,14 +303,23 @@ async fn handle_start(
             event_log,
             app_handle,
             "info",
-            &format!("Route added: {}.{} → {}:{}", route.subdomain, app_config.domain, route.target_host, route.port),
+            &format!(
+                "Route added: {}.{} → {}:{}",
+                route.subdomain, app_config.domain, route.target_host, route.port
+            ),
         );
     }
 
     gateways.extend(new_routes);
 
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+    let _ = caddy::push_routes(
+        http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     emit_gateways(app_handle, &combined);
 }
@@ -251,7 +362,13 @@ async fn handle_stop(
 
     let app_config = config::load_config(app_handle);
     let combined = combine_routes(&app_config.static_routes, &gateways);
-    let _ = caddy::push_routes(http_client, &combined, &app_config.domain, &app_config.dns_provider).await;
+    let _ = caddy::push_routes(
+        http_client,
+        &combined,
+        &app_config.domain,
+        &app_config.dns_provider,
+    )
+    .await;
 
     emit_gateways(app_handle, &combined);
 }
