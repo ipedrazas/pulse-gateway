@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.2.0)"
+        required: true
+        type: string
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version in tauri.conf.json
+        run: |
+          cd src-tauri
+          sed -i '' 's/"version": ".*"/"version": "${{ inputs.version }}"/' tauri.conf.json
+
+      - name: Set version in Cargo.toml
+        run: |
+          cd src-tauri
+          sed -i '' 's/^version = ".*"/version = "${{ inputs.version }}"/' Cargo.toml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v${{ inputs.version }}
+          releaseName: "Pulse Gateway v${{ inputs.version }}"
+          releaseBody: "See the [changelog](https://github.com/${{ github.repository }}/commits/v${{ inputs.version }}) for details."
+          releaseDraft: true
+          prerelease: false
