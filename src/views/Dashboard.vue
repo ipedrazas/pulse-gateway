@@ -18,14 +18,24 @@ const staticGateways = computed(() =>
 );
 
 const hasTls = computed(() => settings.envVars.length > 0);
-const certReady = computed(() => !!settings.certInfo.not_after);
+const certReady = computed(() => !!settings.certInfo.issuer);
 
 onMounted(async () => {
   await settings.fetchSettings();
   await settings.fetchEnvVars();
-  await settings.fetchCertInfo();
   await gateway.init();
+  await settings.fetchCertInfo();
 });
+
+// Re-check cert status when gateways change (routes may arrive after reconciliation)
+watch(
+  () => gateway.allGateways.length,
+  async (newLen, oldLen) => {
+    if (newLen > 0 && newLen !== oldLen) {
+      await settings.fetchCertInfo();
+    }
+  }
+);
 
 // Auto-scroll log to bottom
 watch(

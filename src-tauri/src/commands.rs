@@ -266,7 +266,7 @@ pub async fn get_cert_info(
     let has_env_vars = !config.caddy_env_vars.is_empty();
     let auto = state.auto_gateways.lock().await;
     let combined = watcher::combine_routes(&config.static_routes, &auto);
-    Ok(caddy::get_cert_info(&config.domain, has_env_vars, &combined))
+    Ok(caddy::get_cert_info(&config.domain, has_env_vars, &combined).await)
 }
 
 #[tauri::command]
