@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "../stores/settings";
 
 const settings = useSettingsStore();
@@ -7,10 +8,12 @@ const message = ref("");
 const envMessage = ref("");
 
 // New env var form
+const appVersion = ref("");
 const newEnvKey = ref("");
 const newEnvValue = ref("");
 
 onMounted(async () => {
+  appVersion.value = await getVersion();
   await settings.fetchSettings();
   await settings.fetchEnvVars();
   await settings.fetchCertInfo();
@@ -185,6 +188,11 @@ async function handleRefreshCert() {
         <button class="btn-secondary" @click="handleRefreshCert">Refresh</button>
       </div>
     </section>
+
+    <!-- About -->
+    <section class="section about">
+      <p>Pulse Gateway v{{ appVersion }}</p>
+    </section>
   </div>
 </template>
 
@@ -350,6 +358,12 @@ async function handleRefreshCert() {
   color: #888;
   font-size: 0.85rem;
   margin: 0.75rem 0 0.5rem;
+}
+
+.about {
+  text-align: center;
+  color: #999;
+  font-size: 0.85rem;
 }
 
 .btn-secondary {
