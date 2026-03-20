@@ -447,8 +447,7 @@ fn resolve_ports(
 }
 
 fn image_matches(image: &str, pattern: &str) -> bool {
-    if pattern.ends_with('*') {
-        let prefix = &pattern[..pattern.len() - 1];
+    if let Some(prefix) = pattern.strip_suffix('*') {
         image.starts_with(prefix)
     } else {
         image == pattern

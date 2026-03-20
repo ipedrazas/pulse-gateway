@@ -9,7 +9,6 @@
 language:
   explicit: [rust, typescript]
   typescript:
-    source_dir: [src]
     coverage_threshold: 45
 
   rust:
@@ -40,3 +39,7 @@ checks:
     - common:shutdown
     - security:filesystem
     - security:network
+    - common:env
+    - common:dockerfile
+    - common:health
+    - "*:logging"

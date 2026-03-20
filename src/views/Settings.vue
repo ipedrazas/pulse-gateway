@@ -69,16 +69,8 @@ async function handleRefreshCert() {
       <form class="settings-form" @submit.prevent="handleSaveGeneral">
         <div class="field">
           <label for="domain">Root Domain</label>
-          <input
-            id="domain"
-            v-model="settings.domain"
-            placeholder="e.g. myapp.dev"
-          />
-          <small
-            >Subdomains will be created as *.{{
-              settings.domain || "yourdomain.dev"
-            }}</small
-          >
+          <input id="domain" v-model="settings.domain" placeholder="e.g. myapp.dev" />
+          <small>Subdomains will be created as *.{{ settings.domain || "yourdomain.dev" }}</small>
         </div>
 
         <div class="field">
@@ -87,25 +79,18 @@ async function handleRefreshCert() {
             <option value="cloudflare">Cloudflare</option>
             <option value="porkbun">Porkbun</option>
           </select>
-          <small
-            >DNS provider used for wildcard certificate DNS-01 challenge.</small
-          >
+          <small>DNS provider used for wildcard certificate DNS-01 challenge.</small>
         </div>
 
         <div class="field">
           <label for="caddy-image">Caddy Docker Image</label>
-          <input
-            id="caddy-image"
-            v-model="settings.caddyImage"
-            placeholder="caddy:2"
-          />
+          <input id="caddy-image" v-model="settings.caddyImage" placeholder="caddy:2" />
           <small v-if="settings.dnsProvider === 'cloudflare'">
             Use an image with the Cloudflare DNS plugin (e.g.
             ghcr.io/caddybuilds/caddy-cloudflare:latest).
           </small>
           <small v-else-if="settings.dnsProvider === 'porkbun'">
-            Use an image with the Porkbun DNS plugin (e.g.
-            ghcr.io/caddy-dns/porkbun:latest).
+            Use an image with the Porkbun DNS plugin (e.g. ghcr.io/caddy-dns/porkbun:latest).
           </small>
         </div>
 
@@ -122,22 +107,13 @@ async function handleRefreshCert() {
     <section class="section">
       <h3>Caddy Environment Variables</h3>
       <p class="section-desc">
-        Set environment variables passed to the Caddy container. Values are
-        stored securely in the system keyring. Restart Caddy after changes.
+        Set environment variables passed to the Caddy container. Values are stored securely in the
+        system keyring. Restart Caddy after changes.
       </p>
 
       <form class="env-form" @submit.prevent="handleAddEnvVar">
-        <input
-          v-model="newEnvKey"
-          placeholder="VARIABLE_NAME"
-          class="env-key"
-        />
-        <input
-          v-model="newEnvValue"
-          type="password"
-          placeholder="value"
-          class="env-value"
-        />
+        <input v-model="newEnvKey" placeholder="VARIABLE_NAME" class="env-key" />
+        <input v-model="newEnvValue" type="password" placeholder="value" class="env-value" />
         <button type="submit" :disabled="settings.savingEnv">Add</button>
       </form>
       <div v-if="envMessage" class="env-message">{{ envMessage }}</div>
@@ -159,9 +135,7 @@ async function handleRefreshCert() {
               </span>
             </td>
             <td>
-              <button class="btn-remove" @click="handleRemoveEnvVar(key)">
-                Remove
-              </button>
+              <button class="btn-remove" @click="handleRemoveEnvVar(key)">Remove</button>
             </td>
           </tr>
         </tbody>
@@ -175,12 +149,7 @@ async function handleRefreshCert() {
       <div class="cert-card">
         <div class="cert-row">
           <span>Env vars:</span>
-          <span
-            :class="[
-              'badge',
-              settings.certInfo.has_env_vars ? 'badge-ok' : 'badge-off',
-            ]"
-          >
+          <span :class="['badge', settings.certInfo.has_env_vars ? 'badge-ok' : 'badge-off']">
             {{ settings.certInfo.has_env_vars ? "Configured" : "None" }}
           </span>
         </div>
@@ -208,12 +177,10 @@ async function handleRefreshCert() {
           {{ settings.certInfo.error }}
         </div>
         <p class="cert-note">
-          Caddy auto-renews certificates ~30 days before expiry. Restart Caddy
-          to force a renewal check.
+          Caddy auto-renews certificates ~30 days before expiry. Restart Caddy to force a renewal
+          check.
         </p>
-        <button class="btn-secondary" @click="handleRefreshCert">
-          Refresh
-        </button>
+        <button class="btn-secondary" @click="handleRefreshCert">Refresh</button>
       </div>
     </section>
 

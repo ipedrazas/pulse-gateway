@@ -63,10 +63,21 @@ tasks:
       - npx vue-tsc --noEmit
 
   lint:
-    desc: Lint Rust code
+    desc: Lint all code
+    cmds:
+      - task: lint:backend
+      - task: lint:frontend
+
+  lint:backend:
+    desc: Lint Rust code with Clippy
     dir: src-tauri
     cmds:
       - cargo clippy -- -D warnings
+
+  lint:frontend:
+    desc: Lint frontend code with ESLint
+    cmds:
+      - bun run lint
 
   clean:
     desc: Clean build artifacts
@@ -86,10 +97,9 @@ tasks:
       - cargo fmt
 
   fmt:frontend:
-    desc: Format the code
-    dir: src
+    desc: Format frontend code with Prettier
     cmds:
-      - npx prettier --write .
+      - bun run format
   fmt:
     desc: Format the code
     cmds:

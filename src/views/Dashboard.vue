@@ -13,9 +13,7 @@ const newPort = ref<number | undefined>();
 const error = ref("");
 const logContainer = ref<HTMLElement | null>(null);
 
-const staticGateways = computed(() =>
-  gateway.allGateways.filter((g) => g.source === "static"),
-);
+const staticGateways = computed(() => gateway.allGateways.filter((g) => g.source === "static"));
 
 const hasTls = computed(() => settings.envVars.length > 0);
 const certReady = computed(() => !!settings.certInfo.issuer);
@@ -97,11 +95,7 @@ async function handleAddRoute() {
     return;
   }
   try {
-    await gateway.addRoute(
-      newSubdomain.value,
-      newTargetHost.value,
-      newPort.value,
-    );
+    await gateway.addRoute(newSubdomain.value, newTargetHost.value, newPort.value);
     newSubdomain.value = "";
     newTargetHost.value = "";
     newPort.value = undefined;
@@ -127,26 +121,14 @@ async function handleRemoveRoute(subdomain: string) {
       <div class="status-card">
         <div class="status-row">
           <span>Container:</span>
-          <span
-            :class="[
-              'badge',
-              gateway.caddyStatus.running ? 'badge-ok' : 'badge-err',
-            ]"
-          >
+          <span :class="['badge', gateway.caddyStatus.running ? 'badge-ok' : 'badge-err']">
             {{ gateway.caddyStatus.running ? "Running" : "Stopped" }}
           </span>
         </div>
         <div class="status-row">
           <span>Admin API:</span>
-          <span
-            :class="[
-              'badge',
-              gateway.caddyStatus.api_reachable ? 'badge-ok' : 'badge-err',
-            ]"
-          >
-            {{
-              gateway.caddyStatus.api_reachable ? "Reachable" : "Unreachable"
-            }}
+          <span :class="['badge', gateway.caddyStatus.api_reachable ? 'badge-ok' : 'badge-err']">
+            {{ gateway.caddyStatus.api_reachable ? "Reachable" : "Unreachable" }}
           </span>
         </div>
         <div v-if="gateway.caddyStatus.error" class="status-error">
@@ -205,12 +187,7 @@ async function handleRemoveRoute(subdomain: string) {
             <td>{{ gw.container_name || gw.target_host }}</td>
             <td>{{ gw.port }}</td>
             <td>
-              <span
-                :class="[
-                  'badge',
-                  gw.source === 'auto' ? 'badge-auto' : 'badge-static',
-                ]"
-              >
+              <span :class="['badge', gw.source === 'auto' ? 'badge-auto' : 'badge-static']">
                 {{ gw.source === "auto" ? "Auto" : "Static" }}
               </span>
             </td>
@@ -232,15 +209,11 @@ async function handleRemoveRoute(subdomain: string) {
       <h2>Static Routes</h2>
       <p class="section-desc">
         Route any service — Docker containers or apps running on your Mac. Use
-        <code>localhost</code> for host apps (automatically translated for
-        Docker networking).
+        <code>localhost</code> for host apps (automatically translated for Docker networking).
       </p>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
         <input v-model="newSubdomain" placeholder="subdomain" />
-        <input
-          v-model="newTargetHost"
-          placeholder="localhost or container name"
-        />
+        <input v-model="newTargetHost" placeholder="localhost or container name" />
         <input v-model.number="newPort" type="number" placeholder="port" />
         <button type="submit">Add Route</button>
       </form>
@@ -261,12 +234,7 @@ async function handleRemoveRoute(subdomain: string) {
             <td>{{ route.target_host }}</td>
             <td>{{ route.port }}</td>
             <td>
-              <button
-                class="btn-remove"
-                @click="handleRemoveRoute(route.subdomain)"
-              >
-                Remove
-              </button>
+              <button class="btn-remove" @click="handleRemoveRoute(route.subdomain)">Remove</button>
             </td>
           </tr>
         </tbody>
@@ -286,9 +254,7 @@ async function handleRemoveRoute(subdomain: string) {
           <span class="log-time">{{ entry.timestamp }}</span>
           <span class="log-msg">{{ entry.message }}</span>
         </div>
-        <div v-if="gateway.eventLog.length === 0" class="empty-state">
-          No events yet.
-        </div>
+        <div v-if="gateway.eventLog.length === 0" class="empty-state">No events yet.</div>
       </div>
     </section>
   </div>

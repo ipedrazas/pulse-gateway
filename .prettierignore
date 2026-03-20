@@ -1,0 +1,7 @@
+dist
+src-tauri
+node_modules
+docs
+.vscode
+src-tauri/gen
+*.md
