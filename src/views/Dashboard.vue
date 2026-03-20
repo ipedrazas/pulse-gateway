@@ -3,6 +3,12 @@ import { ref, computed, onMounted, nextTick, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useGatewayStore } from "../stores/gateway";
 import { useSettingsStore } from "../stores/settings";
+import {
+  gatewayStatus as getGatewayStatus,
+  statusLabel as getStatusLabel,
+  fqdn as getFqdn,
+  gatewayUrl as getGatewayUrl,
+} from "../utils/gateway-helpers";
 
 const gateway = useGatewayStore();
 const settings = useSettingsStore();
@@ -47,28 +53,19 @@ watch(
 );
 
 function gatewayStatus(): "ssl" | "proxy" {
-  if (hasTls.value && certReady.value) return "ssl";
-  return "proxy";
+  return getGatewayStatus(hasTls.value, certReady.value);
 }
 
 function statusLabel(status: string): string {
-  switch (status) {
-    case "ssl":
-      return "SSL";
-    case "proxy":
-      return "Proxy";
-    default:
-      return status;
-  }
+  return getStatusLabel(status);
 }
 
 function fqdn(subdomain: string): string {
-  return settings.domain ? `${subdomain}.${settings.domain}` : subdomain;
+  return getFqdn(subdomain, settings.domain);
 }
 
 function gatewayUrl(subdomain: string): string {
-  const proto = hasTls.value ? "https" : "http";
-  return `${proto}://${fqdn(subdomain)}`;
+  return getGatewayUrl(subdomain, settings.domain, hasTls.value);
 }
 
 async function openGateway(subdomain: string) {

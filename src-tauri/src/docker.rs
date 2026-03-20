@@ -340,3 +340,118 @@ pub async fn list_running_containers(docker: &Docker) -> Result<Vec<String>, Str
 
     Ok(containers.into_iter().filter_map(|c| c.id).collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn docker_err_generic_passthrough() {
+        let err = bollard::errors::Error::DockerResponseServerError {
+            status_code: 404,
+            message: "not found".to_string(),
+        };
+        let result = docker_err("Failed to list", err);
+        assert!(result.starts_with("Failed to list:"));
+        assert!(result.contains("404"));
+    }
+
+    #[test]
+    fn docker_err_connect_error() {
+        // Simulate what hyper produces when Docker socket is missing
+        let err = bollard::errors::Error::DockerResponseServerError {
+            status_code: 500,
+            message: "client error (Connect): No such file or directory".to_string(),
+        };
+        let result = docker_err("Failed to list", err);
+        assert_eq!(
+            result,
+            "Docker does not appear to be running. Please start Docker Desktop and try again."
+        );
+    }
+
+    #[test]
+    fn docker_err_connection_refused() {
+        let err = bollard::errors::Error::DockerResponseServerError {
+            status_code: 500,
+            message: "connection refused".to_string(),
+        };
+        let result = docker_err("Test context", err);
+        assert_eq!(
+            result,
+            "Docker does not appear to be running. Please start Docker Desktop and try again."
+        );
+    }
+
+    #[test]
+    fn network_name_constant() {
+        assert_eq!(NETWORK_NAME, "pulse-gateway");
+    }
+
+    #[test]
+    fn caddy_container_name_constant() {
+        assert_eq!(CADDY_CONTAINER_NAME, "pulse-caddy");
+    }
+
+    #[test]
+    fn docker_err_no_such_file() {
+        let err = bollard::errors::Error::DockerResponseServerError {
+            status_code: 500,
+            message: "No such file or directory (os error 2)".to_string(),
+        };
+        let result = docker_err("context", err);
+        assert!(result.contains("Docker does not appear to be running"));
+    }
+
+    #[test]
+    fn docker_err_preserves_context_on_other_errors() {
+        let err = bollard::errors::Error::DockerResponseServerError {
+            status_code: 409,
+            message: "conflict: container already exists".to_string(),
+        };
+        let result = docker_err("Failed to create", err);
+        assert!(result.starts_with("Failed to create:"));
+        assert!(result.contains("conflict"));
+    }
+
+    #[test]
+    fn docker_err_timeout() {
+        let err = bollard::errors::Error::RequestTimeoutError;
+        let result = docker_err("Timed out", err);
+        assert!(result.starts_with("Timed out:"));
+    }
+
+    #[test]
+    fn container_info_fields() {
+        let info = ContainerInfo {
+            id: "abc123".to_string(),
+            name: "my-container".to_string(),
+            image: "nginx:latest".to_string(),
+            labels: HashMap::from([("key".to_string(), "val".to_string())]),
+            ports: vec![80, 443],
+            on_network: true,
+        };
+        assert_eq!(info.id, "abc123");
+        assert_eq!(info.name, "my-container");
+        assert_eq!(info.image, "nginx:latest");
+        assert_eq!(info.labels.get("key").unwrap(), "val");
+        assert_eq!(info.ports, vec![80, 443]);
+        assert!(info.on_network);
+    }
+
+    #[test]
+    fn container_info_empty() {
+        let info = ContainerInfo {
+            id: String::new(),
+            name: String::new(),
+            image: String::new(),
+            labels: HashMap::new(),
+            ports: vec![],
+            on_network: false,
+        };
+        assert!(info.id.is_empty());
+        assert!(info.labels.is_empty());
+        assert!(info.ports.is_empty());
+        assert!(!info.on_network);
+    }
+}

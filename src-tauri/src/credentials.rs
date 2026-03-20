@@ -92,3 +92,141 @@ pub fn delete_value(key: &str) {
         save_fallback(&map);
     }
 }
+
+/// Load secrets from a JSON file at the given path.
+#[cfg(test)]
+fn load_from_path(path: &std::path::Path) -> HashMap<String, String> {
+    match fs::read_to_string(path) {
+        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+/// Save secrets to a JSON file at the given path.
+#[cfg(test)]
+fn save_to_path(path: &std::path::Path, map: &HashMap<String, String>) {
+    if let Ok(data) = serde_json::to_string_pretty(map) {
+        let _ = fs::write(path, data);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn service_name() {
+        assert_eq!(SERVICE, "dev.andcake.pulsegw");
+    }
+
+    #[test]
+    fn entry_creation_succeeds() {
+        // Should not panic for a valid key
+        let result = entry("test-key");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn load_from_missing_file() {
+        let path = std::path::Path::new("/tmp/nonexistent_pulse_test.json");
+        let map = load_from_path(path);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn load_from_invalid_json() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, "not json").unwrap();
+        let map = load_from_path(f.path());
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+
+        let mut map = HashMap::new();
+        map.insert("KEY1".to_string(), "value1".to_string());
+        map.insert("KEY2".to_string(), "value2".to_string());
+        save_to_path(&path, &map);
+
+        let loaded = load_from_path(&path);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.get("KEY1").unwrap(), "value1");
+        assert_eq!(loaded.get("KEY2").unwrap(), "value2");
+    }
+
+    #[test]
+    fn save_overwrite() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+
+        let mut map1 = HashMap::new();
+        map1.insert("A".to_string(), "1".to_string());
+        save_to_path(&path, &map1);
+
+        let mut map2 = HashMap::new();
+        map2.insert("B".to_string(), "2".to_string());
+        save_to_path(&path, &map2);
+
+        let loaded = load_from_path(&path);
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded.get("A").is_none());
+        assert_eq!(loaded.get("B").unwrap(), "2");
+    }
+
+    #[test]
+    fn save_empty_map() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+
+        save_to_path(&path, &HashMap::new());
+        let loaded = load_from_path(&path);
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn load_valid_json_with_extra_fields() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, r#"{{"KEY":"val","OTHER":"x"}}"#).unwrap();
+        let map = load_from_path(f.path());
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get("KEY").unwrap(), "val");
+    }
+
+    #[test]
+    fn load_empty_json_object() {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, "{{}}").unwrap();
+        let map = load_from_path(f.path());
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn save_special_characters() {
+        let f = NamedTempFile::new().unwrap();
+        let path = f.path().to_path_buf();
+
+        let mut map = HashMap::new();
+        map.insert(
+            "KEY".to_string(),
+            "value with \"quotes\" and \nnewlines".to_string(),
+        );
+        save_to_path(&path, &map);
+
+        let loaded = load_from_path(&path);
+        assert_eq!(
+            loaded.get("KEY").unwrap(),
+            "value with \"quotes\" and \nnewlines"
+        );
+    }
+
+    #[test]
+    fn fallback_path_ends_with_json() {
+        let path = fallback_path();
+        assert!(path.to_string_lossy().ends_with("env_secrets.json"));
+    }
+}

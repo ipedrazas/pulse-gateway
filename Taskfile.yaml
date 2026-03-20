@@ -41,9 +41,9 @@ tasks:
       - cargo test
 
   test:frontend:
-    desc: Type-check frontend
+    desc: Run frontend tests
     cmds:
-      - npx vue-tsc --noEmit
+      - bun run test
 
   check:
     desc: Run all checks (type-check + cargo check)
