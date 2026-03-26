@@ -209,8 +209,8 @@ async function handleRemoveRoute(subdomain: string) {
         <code>localhost</code> for host apps (automatically translated for Docker networking).
       </p>
       <form class="add-route-form" @submit.prevent="handleAddRoute">
-        <input v-model="newSubdomain" placeholder="subdomain" />
-        <input v-model="newTargetHost" placeholder="localhost or container name" />
+        <input v-model="newSubdomain" placeholder="subdomain" @input="newSubdomain = newSubdomain.toLowerCase()" />
+        <input v-model="newTargetHost" placeholder="localhost or container name" @input="newTargetHost = newTargetHost.toLowerCase()" />
         <input v-model.number="newPort" type="number" placeholder="port" />
         <button type="submit">Add Route</button>
       </form>

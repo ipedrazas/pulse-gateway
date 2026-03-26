@@ -69,7 +69,7 @@ async function handleRefreshCert() {
       <form class="settings-form" @submit.prevent="handleSaveGeneral">
         <div class="field">
           <label for="domain">Root Domain</label>
-          <input id="domain" v-model="settings.domain" placeholder="e.g. myapp.dev" />
+          <input id="domain" v-model="settings.domain" placeholder="e.g. myapp.dev" @input="settings.domain = settings.domain.toLowerCase()" />
           <small>Subdomains will be created as *.{{ settings.domain || "yourdomain.dev" }}</small>
         </div>
 
